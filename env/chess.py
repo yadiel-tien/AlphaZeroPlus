@@ -1,0 +1,556 @@
+from gymnasium import spaces
+from numpy.typing import NDArray
+from utils.config import CONFIG
+from utils.types import ChessMove, PieceMoveFunc, GameResult
+from .chess_cython import get_valid_actions
+import numpy as np
+
+from .env import BaseEnv
+
+settings = CONFIG['ChineseChess']
+
+
+class ChineseChess(BaseEnv):
+    _move2action: dict[ChessMove, int] = {}
+    _action2move: dict[int, ChessMove] = {}
+    np_move2action: NDArray[np.int32] = np.zeros((10, 9, 10, 9), dtype=np.int32)
+    piece2id: dict[str, int] = {}
+    id2piece: dict[int, str] = {}
+    advisor_moves: list[ChessMove] = []
+    bishop_moves: list[ChessMove] = []
+    # dest_func: dict[int, PieceMoveFunc] = {}
+    n_actions = 2086
+    mirror_lr_actions: NDArray[np.int_] = np.zeros((n_actions,), dtype=np.int_)
+    mirror_ud_actions: NDArray[np.int_] = np.zeros((n_actions,), dtype=np.int_)
+
+    def __init__(self):
+        super().__init__()
+        self.shape: tuple[int, int, int] = (10, 9, 7)
+        self.init_class_dicts()
+        self.action_space = spaces.Discrete(self.n_actions)
+        self.observation_space = spaces.Box(-1, 13, shape=self.shape, dtype=np.float32)
+        # self.history: list[NDArray[np.float32]] = []
+        self.reset()
+
+    def reset(self, seed=None, options=None) -> tuple[NDArray[np.int32], dict]:
+        """
+        重置游戏, 返回当前棋盘状态
+        array.board_shape=(10,9,7),[0-5]层代表最近6步，数字-1代表空白，0-13代表不同棋子。[6]层代表未吃子步数，0-100归一化到0-1
+        """
+        self.state: NDArray[np.int32] = np.zeros(self.shape, dtype=np.int32)
+        self.state[:, :, 0] = np.array([
+            [7, 8, 9, 10, 11, 10, 9, 8, 7],
+            [-1, -1, -1, -1, -1, -1, -1, -1, -1],
+            [-1, 12, -1, -1, -1, -1, -1, 12, -1],
+            [13, -1, 13, -1, 13, -1, 13, -1, 13],
+            [-1, -1, -1, -1, -1, -1, -1, -1, -1],
+            [-1, -1, -1, -1, -1, -1, -1, -1, -1],
+            [6, -1, 6, -1, 6, -1, 6, -1, 6],
+            [-1, 5, -1, -1, -1, -1, -1, 5, -1],
+            [-1, -1, -1, -1, -1, -1, -1, -1, -1],
+            [0, 1, 2, 3, 4, 3, 2, 1, 0],
+        ])
+        self.reset_status()
+        return self.state, {}
+
+    @classmethod
+    def virtual_step(cls, state: NDArray[np.int32], action: int) -> NDArray[np.int32]:
+        """只改变state，不计算输赢和奖励"""
+        new_state = np.copy(state)
+        r, c, to_r, to_c = cls._action2move[action]
+        attacker = new_state[r, c, 0]
+        target = new_state[to_r, to_c, 0]
+        # 统计双方未吃子回合，用于平局
+        if target == -1:
+            new_state[:, :, -1] += 1
+        else:
+            new_state[:, :, -1] = 0
+
+        # 历史信息
+        new_state[:, :, 1:6] = new_state[:, :, 0:5]
+
+        # 执行落子
+        new_state[r, c, 0] = -1
+        new_state[to_r, to_c, 0] = attacker
+        return new_state
+
+    @classmethod
+    def check_winner(cls, state: NDArray, player_just_moved: int, action_just_executed: int) -> GameResult:
+        """检查胜负情况，相对于perspective_player来说
+        :param action_just_executed: 刚刚做过的动作
+        :param state: (10,9,6)落子后的state
+        :param player_just_moved:相对于刚落子玩家来说的结果， 0红1黑
+        :return: 1胜，0平，-1负, 2未分胜负"""
+        # 100步未吃子判和
+        if state[0, 0, -1] >= 100:
+            return GameResult.DRAW
+
+        # 连将判负
+        diffs = []
+        for i in range(5):
+            diffs.append(np.equal(state[:, :, i], state[:, :, i + 1]))
+        if np.array_equal(diffs[0], diffs[2]) \
+                and np.array_equal(diffs[0], diffs[4]) \
+                and np.array_equal(diffs[1], diffs[3]) \
+                and cls.is_check(state, 1 - player_just_moved):
+            return GameResult.LOSE
+
+        board = state[:, :, 0]
+        if 4 not in board:  # 红帅被杀
+            return GameResult.WIN if player_just_moved == 1 else GameResult.LOSE
+        if 11 not in board:  # 黑帅被杀
+            return GameResult.WIN if player_just_moved == 0 else GameResult.LOSE
+
+        # 未分胜负
+        return GameResult.ONGOING
+
+    def step(self, action: int) -> tuple[np.ndarray, float, bool, bool, dict]:
+        """
+        执行落子
+        :param action: 动作编号（棋盘上的位置）
+        :return: observation（新的state）, reward（奖励）, terminated（是否结束）,truncated(是否因时间限制中断）, info（额外信息）
+        """
+        self.state, reward, terminated, truncated, info = self.step_fn(self.state, action, self.player_to_move)
+        # 处理终局。0,1代表获胜玩家，-1代表平局，2代表未决胜负
+        if terminated:
+            winner = self.player_to_move if reward == 1 else 1 - self.player_to_move if reward == -1 else -1
+            self.set_winner(winner)
+
+        # 对手被绝杀，不用等到老将被吃
+        # if self.is_checkmate(self.state, 1 - self.player_to_move):
+        #     winner = self.player_to_move
+        #     reward = 1
+        #     self.set_winner(winner)
+
+        # 记录棋谱
+        # self.history.append(np.copy(self.state[:, :, 0]))
+
+        # 更改玩家
+        self.player_to_move = 1 - self.player_to_move
+        self.last_action = action
+
+        return self.state, reward, self.terminated, self.truncated, {}
+
+    @classmethod
+    def convert_to_network(cls, state: NDArray, current_player: int) -> NDArray:
+        """
+        将 10x9x6 的 array 编码为 10x9x20 的 one-hot 张量供神经网络使用。
+
+        输出 arr 的含义：
+        - [0~13]：当前棋盘上的棋子类型（0~13），0-6当前玩家，7-13对手
+        - [14~18]：最近 5 步之间的棋盘是否保持不变
+        - [19]: 未吃子步数 steps/100 归一化
+
+        :return: arr: board_shape=(10, 9, 20), dtype=np.float32
+
+        """
+        arr = np.zeros((10, 9, 20), dtype=np.float32)
+        # 当前盘面
+        board = state[:, :, 0]
+        # 当前盘面编码，0-13代表不同棋子
+        for i in range(14):
+            arr[:, :, i] = np.asarray(board == i, dtype=np.float32)
+
+        # 交换位置，保证0-6当前玩家
+        if current_player == 1:
+            temp = arr[:, :, :7]
+            arr[:, :, :7] = arr[:, :, 7:14]
+            arr[:, :, 7:14] = temp
+        # 最近4步差分历史信息
+        for i in range(1, 6):
+            arr[:, :, 13 + i] = np.equal(state[:, :, i - 1], state[:, :, i]).astype(np.float32)
+        # 编码未吃子步数，超过100判和
+        arr[:, :, -1] = state[:, :, -1].astype(np.float32) / 100.0
+        return arr
+
+    @classmethod
+    def get_valid_actions(cls, state: NDArray, player_to_move: int) -> NDArray[np.int_]:
+        """获取当前局面的合法动作
+        :param player_to_move: 当前玩家。0红1黑
+        :param state: (10x9x6)[0-4]近5步盘面,[5]未吃子步数。
+        :return: arr: 一维int类型np数组"""
+        return get_valid_actions(state, player_to_move, cls.np_move2action)
+        # available_actions = []
+        # board = state[:, :, 0]
+        # for r in range(10):
+        #     for c in range(9):
+        #         piece = int(board[r, c])
+        #         if (player_to_move == 0 and 0 <= piece <= 6) or (player_to_move == 1 and piece >= 7):
+        #             destinations = ChineseChess.dest_func[piece](state, r, c)
+        #             for to_r, to_c in destinations:
+        #                 available_actions.append(cls._move2action[(r, c, to_r, to_c)])
+        # return np.array(available_actions, dtype=np.int32)
+
+    @staticmethod
+    def _get_rook_dest(state: NDArray, r: int, c: int) -> list[tuple[int, int]]:
+        board = state[:, :, 0]
+        destinations = []
+        own_side = board[r, c] < 7  # 0-6红方
+        directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+        for dr, dc in directions:
+            nr, nc = r, c
+            while True:
+                nr += dr
+                nc += dc
+                if not (0 <= nr < 10 and 0 <= nc < 9):
+                    break  # 越界
+                target = board[nr, nc]
+
+                if target == -1:  # 空位
+                    destinations.append((nr, nc))
+                elif (target < 7) != own_side:  # 对手棋子，可以吃
+                    destinations.append((nr, nc))
+                    break
+                else:  # 己方棋子
+                    break
+
+        return destinations
+
+    @staticmethod
+    def _get_horse_dest(state: NDArray, r: int, c: int) -> list[tuple[int, int]]:
+        board = state[:, :, 0]
+        destinations = []
+        horse_moves = (
+            ((-2, -1), (-1, 0)),  # 上上左，蹩脚点：上
+            ((-2, 1), (-1, 0)),  # 上上右
+            ((-1, -2), (0, -1)),  # 上左左，蹩脚点：左
+            ((-1, 2), (0, 1)),  # 上右右
+            ((1, -2), (0, -1)),  # 下左左
+            ((1, 2), (0, 1)),  # 下右右
+            ((2, -1), (1, 0)),  # 下下左
+            ((2, 1), (1, 0)),  # 下下右
+        )
+        own_side = board[r, c] < 7
+        for (dr, dc), (br, bc) in horse_moves:
+            nr, nc = r + dr, c + dc
+            block_r, block_c = r + br, c + bc
+            # 目标位置在棋盘上，且没有蹩脚
+            if 0 <= nr < 10 and 0 <= nc < 9:
+                if board[block_r, block_c] != -1:
+                    continue
+                # 目标位置没有棋子或有对方棋子
+                target = board[nr, nc]
+                if target == -1 or (target < 7) != own_side:
+                    destinations.append((nr, nc))
+        return destinations
+
+    @staticmethod
+    def _get_bishop_dest(state: NDArray, r: int, c: int) -> list[tuple[int, int]]:
+        board = state[:, :, 0]
+        destinations = []
+        own_side = board[r, c] < 7
+        for from_r, from_c, to_r, to_c in ChineseChess.bishop_moves:
+            if from_r != r or from_c != c:
+                continue
+            # 象眼
+            block_r, block_c = (from_r + to_r) // 2, (from_c + to_c) // 2
+            if board[block_r, block_c] != -1:
+                continue
+
+            target = board[to_r, to_c]
+            if target == -1 or (target < 7) != own_side:
+                destinations.append((to_r, to_c))
+        return destinations
+
+    @staticmethod
+    def _get_advisor_dest(state: NDArray, r: int, c: int) -> list[tuple[int, int]]:
+        board = state[:, :, 0]
+        destinations = []
+        own_side = board[r, c] < 7
+        for from_r, from_c, to_r, to_c in ChineseChess.advisor_moves:
+            if from_r != r or from_c != c:
+                continue
+            target = board[to_r, to_c]
+            if target == -1 or (target < 7) != own_side:  # 目标位置为空或为敌方棋子
+                destinations.append((to_r, to_c))
+        return destinations
+
+    @staticmethod
+    def _get_king_dest(state: NDArray, r: int, c: int) -> list[tuple[int, int]]:
+        board = state[:, :, 0]
+        destinations = []
+        candidates = ((r + 1, c), (r - 1, c), (r, c + 1), (r, c - 1))
+        is_red_king = board[r, c] == 4
+        valid_rows = range(7, 10) if is_red_king else range(0, 3)
+        rival_king = 11 if is_red_king else 4
+        for to_r, to_c in candidates:
+            if to_c < 3 or to_c > 5:
+                continue
+            if to_r not in valid_rows:
+                continue
+
+            target = board[to_r, to_c]
+            if target == -1 or ((target < 7) != is_red_king):
+                destinations.append((to_r, to_c))
+
+        # 两帅照面的情况
+        dr = -1 if is_red_king else 1
+        nr = r + dr
+        while 0 <= nr <= 9:
+            target = board[nr, c]
+            if target == -1:
+                nr += dr
+            elif target == rival_king:
+                destinations.append((nr, c))
+                break
+            else:
+                break
+
+        return destinations
+
+    @staticmethod
+    def _get_cannon_dest(state: NDArray, r: int, c: int) -> list[tuple[int, int]]:
+        board = state[:, :, 0]
+        destinations = []
+        own_side = board[r, c] < 7
+        directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+
+        for dr, dc in directions:
+            found_screen = False  # 炮架
+            nr, nc = r + dr, c + dc
+            while 0 <= nr <= 9 and 0 <= nc <= 8:
+                target = int(board[nr, nc])
+                if found_screen:
+                    if target == -1:
+                        pass  # 炮架后空格不可走
+                    elif (target < 7) != own_side:  # 对方棋子可吃
+                        destinations.append((nr, nc))
+                        break
+                    else:  # 己方棋子不可吃
+                        break
+                else:
+                    if target == -1:  # 炮架前空格可走
+                        destinations.append((nr, nc))
+                    else:
+                        found_screen = True  # 第一个遇到的棋子是炮架
+                nr += dr
+                nc += dc
+
+        return destinations
+
+    @staticmethod
+    def _get_pawn_dest(state: NDArray, r: int, c: int) -> list[tuple[int, int]]:
+        board = state[:, :, 0]
+        destinations = []
+        is_red_pawn = board[r, c] == 6
+        dr = -1 if is_red_pawn else 1
+        has_crossed = (r <= 4) if is_red_pawn else (r > 4)  # 过河
+        candidates = [(r + dr, c), (r, c - 1), (r, c + 1)] if has_crossed else [(r + dr, c)]
+        for to_r, to_c in candidates:
+            if 0 <= to_r < 10 and 0 <= to_c < 9:  # 在棋盘上
+                target = board[to_r, to_c]
+                if target == -1 or ((target < 7) != is_red_pawn):
+                    destinations.append((to_r, to_c))
+
+        return destinations
+
+    @staticmethod
+    def is_checkmate(state: NDArray, perspective_player: int) -> bool:
+        """判断player_to_move是否已被将死，是否还有棋可走"""
+        valid_actions = ChineseChess.get_valid_actions(state, perspective_player)
+        for action in valid_actions:
+            new_state = ChineseChess.virtual_step(state, action)
+            if not ChineseChess.is_check(new_state, perspective_player):
+                return False
+        return True
+
+    @staticmethod
+    def is_check(state: NDArray, perspective_player: int) -> bool:
+        """判断当前state局面下perspective_player是否被将军"""
+        perspective_king = 4 if perspective_player == 0 else 11
+        rival = 1 - perspective_player
+        valid_actions = ChineseChess.get_valid_actions(state, rival)
+        for action in valid_actions:
+            _, _, to_r, to_c = ChineseChess.action2move(action)
+            target = state[to_r, to_c, 0]
+            if target == perspective_king:
+                return True
+        return False
+
+    @staticmethod
+    def get_action_executor(state: NDArray, action_to_execute: int) -> int:
+        """根据要执行的动作获取动作执行方，红方0，黑方1"""
+        r, c, to_r, to_c = ChineseChess._action2move[action_to_execute]
+        piece = state[r, c, 0]
+        if 0 <= piece < 7:
+            return 0
+        elif 6 <= piece < 14:
+            return 1
+        else:
+            raise ValueError("Invalid action to execute")
+
+    @classmethod
+    def init_class_dicts(cls) -> None:
+        if cls.piece2id:  # 避免重复初始化
+            return
+
+        cls.piece2id = {
+            '红车': 0, '红马': 1, '红象': 2, '红士': 3, '红帅': 4, '红炮': 5, '红兵': 6,
+            '黑车': 7, '黑马': 8, '黑象': 9, '黑士': 10, '黑帅': 11, '黑炮': 12, '黑兵': 13, '一一': -1
+        }
+        cls.id2piece = {v: k for k, v in cls.piece2id.items()}
+        a = 0
+        # 垂直水平移动
+        for r in range(10):
+            for c in range(9):
+                for to_r in range(10):
+                    if to_r != r:
+                        move = (r, c, to_r, c)
+                        cls._move2action[move] = a
+                        a += 1
+                for to_c in range(9):
+                    if to_c != c:
+                        move = (r, c, r, to_c)
+                        cls._move2action[move] = a
+                        a += 1
+        # 士的动作
+        cls.advisor_moves = [
+            (0, 3, 1, 4), (0, 5, 1, 4), (1, 4, 0, 3), (1, 4, 0, 5), (1, 4, 2, 3), (1, 4, 2, 5), (2, 3, 1, 4),
+            (2, 5, 1, 4), (9, 3, 8, 4), (9, 5, 8, 4), (8, 4, 9, 3), (8, 4, 9, 5), (8, 4, 7, 3), (8, 4, 7, 5),
+            (7, 3, 8, 4), (7, 5, 8, 4)
+        ]
+        for move in cls.advisor_moves:
+            cls._move2action[move] = a
+            a += 1
+        # 象的动作
+        cls.bishop_moves = [
+            (0, 2, 2, 0), (0, 2, 2, 4), (0, 6, 2, 4), (0, 6, 2, 8), (2, 0, 0, 2), (2, 0, 4, 2), (2, 4, 0, 2),
+            (2, 4, 4, 2), (2, 4, 0, 6), (2, 4, 4, 6), (2, 8, 0, 6), (2, 8, 4, 6), (4, 2, 2, 0), (4, 2, 2, 4),
+            (4, 6, 2, 4), (4, 6, 2, 8)
+        ]
+        rival_bishop_moves = [(9 - r, c, 9 - to_r, to_c) for r, c, to_r, to_c in cls.bishop_moves]
+        cls.bishop_moves.extend(rival_bishop_moves)
+        for move in cls.bishop_moves:
+            cls._move2action[move] = a
+            a += 1
+        # 马的动作
+        for r in range(10):
+            for c in range(9):
+                for dr, dc, in ((1, 2), (2, 1), (-1, 2), (-2, 1), (1, -2), (2, -1), (-1, -2), (-2, -1)):
+                    to_r, to_c = r + dr, c + dc
+                    if 0 <= to_r < 10 and 0 <= to_c < 9:
+                        move = (r, c, to_r, to_c)
+                        cls._move2action[move] = a
+                        a += 1
+        cls._action2move = {v: k for k, v in cls._move2action.items()}
+
+        # 左右、上下翻转后的动作对应
+        for action in range(cls.n_actions):
+            r, c, to_r, to_c = cls.action2move(action)
+            mirror_lr_move = (r, 8 - c, to_r, 8 - to_c)
+            mirror_ud_move = (9 - r, c, 9 - to_r, to_c)
+            cls.mirror_lr_actions[action] = cls._move2action[mirror_lr_move]
+            cls.mirror_ud_actions[action] = cls._move2action[mirror_ud_move]
+        # numpy，方便cython
+        for (r, c, to_r, to_c), action in cls._move2action.items():
+            cls.np_move2action[r, c, to_r, to_c] = action
+        # cls.dest_func = {
+        #     0: cls._get_rook_dest,
+        #     1: cls._get_horse_dest,
+        #     2: cls._get_bishop_dest,
+        #     3: cls._get_advisor_dest,
+        #     4: cls._get_king_dest,
+        #     5: cls._get_cannon_dest,
+        #     6: cls._get_pawn_dest
+        # }
+        # for i in range(7, 14):
+        #     cls.dest_func[i] = cls.dest_func[i - 7]
+
+    @classmethod
+    def render_fn(cls, state: NDArray) -> None:
+        """打印棋盘"""
+        board_str = '\n ' + ''.join([f'{i:^5}' for i in range(9)]) + '\n'
+        for i, row in enumerate(state[:, :, 0]):
+            row_str = f'{i}'
+            for piece_id in row:
+                ch = cls.id2piece[int(piece_id)]
+                if 0 <= piece_id <= 6:
+                    row_str += f' \033[91m{ch:2}\033[0m'
+                else:
+                    row_str += f' {ch:2}'
+            board_str += row_str + '\n'
+
+        print(board_str)
+
+    def render(self) -> None:
+        self.render_fn(self.state)
+
+    @classmethod
+    def handle_human_input(cls, state: NDArray, last_action: int, player_to_move: int) -> int:
+        cls.render_fn(state)
+        valid_actions = cls.get_valid_actions(state, player_to_move)
+        while True:
+            txt = input('输入一个4位数字，前两位代表当前棋子位置，后两位代表移动到的位置，例如红方炮7平4为7774。\n')
+            if not (len(txt) == 4 and txt.isdigit()):
+                print("输入格式有误！请确保是 4 位数字，例如 7774。")
+                continue
+            r, c, to_r, to_c = map(int, txt)
+            move = r, c, to_r, to_c
+            if move not in cls._move2action:
+                print("该步不在合法动作表中，可能位置超出棋盘或走法无效。")
+                continue
+
+            action = cls.move2action(move)
+            if action not in valid_actions:
+                print("该走法不合法（可能被蹩马脚、被将军、或无该棋子）！请重新输入。")
+                continue
+
+            return action
+        raise RuntimeError("handle_human_input should never reach here")
+
+    @classmethod
+    def describe_move(cls, state: NDArray, action: int) -> None:
+        r, c, to_r, to_c = cls._action2move[action]
+        big_char = ['一', '二', '三', '四', '五', '六', '七', '八', '九']
+        red_col = big_char[::-1]
+        black_col = list(range(1, 10))
+        desc = ''
+        piece_id = int(state[r, c, 0])
+        piece = cls.id2piece[piece_id]
+        desc += piece[1]
+        is_red = 0 <= piece_id < 7
+        if is_red:
+            desc += red_col[c]
+            if r == to_r:
+                desc += '平' + red_col[to_c]
+            elif r > to_r:
+                desc += '进'
+                if c == to_c:
+                    desc += big_char[r - to_r - 1]
+                else:
+                    desc += red_col[to_c]
+            else:
+                desc += '退'
+                if c == to_c:
+                    desc += big_char[to_r - r - 1]
+                else:
+                    desc += red_col[to_c]
+        else:
+            desc += str(black_col[c])
+            if r == to_r:
+                desc += f'平{black_col[to_c]}'
+            elif r > to_r:
+                desc += '退'
+                if c == to_c:
+                    desc += str(black_col[r - to_r - 1])
+                else:
+                    desc += str(black_col[to_c])
+            else:
+                desc += '进'
+                if c == to_c:
+                    desc += str(black_col[to_r - r - 1])
+                else:
+                    desc += str(black_col[to_c])
+
+        eat_piece = cls.id2piece[int(state[to_r, to_c, 0])]
+        result = '' if eat_piece == '一一' else '吃 ' + eat_piece
+        print(f'{desc} ({r},{c}) -> ({to_r}, {to_c}) {result}')
+
+    @classmethod
+    def action2move(cls, action: int) -> ChessMove:
+        return cls._action2move[action]
+
+    @classmethod
+    def move2action(cls, move: ChessMove) -> int:
+        """:return 如果move不存在返回 -1"""
+        return cls._move2action.get(move, -1)

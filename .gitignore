@@ -7,3 +7,4 @@ data/
 .vscode/
 .idea/
 .DS_Store
+logs/
