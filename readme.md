@@ -100,8 +100,7 @@ five_in_a_row/
     python -X gil=0 scripts/selfplay.py
     ```
     自我对弈程序会开始高速生成棋局数据，并在每轮结束后通知服务器进行训练。
-
-### 2. 图形化对战 (Human vs. AI)
+### 2. 命令行对战 (Human vs. AI)
 
 这需要两个终端，分别在**不同**的Python环境中运行。
 
@@ -112,8 +111,28 @@ five_in_a_row/
     conda active fiveInARow
     python scripts/infer_hub.py # 假设这是您的Hub启动脚本
   ```
-* **在【终端2 - AI大脑】，启动AI对战API服务器:**
+* **在【终端2 - 命令行对战界面】，启动AI对战API服务器:**
     * 这个服务器负责接收UI的请求并进行MCTS计算。
+    * 在**标准Python环境**环境中运行或 **`nogil_venv`环境**都可以。
+    ```bash
+    conda active fiveInARow
+    python scripts/play_server.py # 这是您的Flask服务器
+    ```
+
+
+### 3. 图形化对战 (Human vs. AI)
+
+这需要两个终端，分别在**不同**的Python环境中运行。
+
+* **在【终端1 - 管理中心】，启动Hub服务器:**
+    * Hub负责动态创建和管理推理服务。
+    * 在**标准Python环境**环境中运行。
+    ```bash
+    conda active fiveInARow
+    python scripts/infer_hub.py # 假设这是您的Hub启动脚本
+  ```
+* **在【终端2 - 远程后端服务】，启动AI对战API服务器:**
+    * 这个服务器负责接收UI的请求并进行MCTS计算。通过http服务传输，支持局域网不同主机通信。
     * 在**标准Python环境**环境中运行。。
     ```bash
     conda active fiveInARow
@@ -129,7 +148,7 @@ five_in_a_row/
     ```
     Pygame窗口将会启动，您可以与通过API服务器运行的AI进行对战。
 
-### 3. AI竞技场 (评估模型棋力)
+### 4. AI竞技场 (评估模型棋力)
 
 * **准备工作:** 在`data/rates/ChineseChess/` (或Gomoku) 目录下，创建一个 `candidates.txt` 文件，里面用逗号分隔写上您想评估的模型ID，例如：`450,460,470,480`。
 
