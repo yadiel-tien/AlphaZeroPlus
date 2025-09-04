@@ -18,6 +18,7 @@ class InferenceEngine:
         # 推理model
         self.eval_model, self.model_index = Net.make_model(model_index, env_name)
         self.eval_model.to(CONFIG['device']).eval()
+        self.eval_model = torch.compile(self.eval_model)  # 优化
         self.env_name = env_name
         self.name = get_model_name(env_name, model_index)
         # 负责单个request的发送接收
@@ -42,7 +43,7 @@ class InferenceEngine:
         while self.running:
             batch_size = 1
             threshold = 8
-            max_size = 8
+            max_size = 12
             n_pending = self.infer_queue.qsize()
             delay = 5e-4 + 3e-4 * n_pending  # 根据queue排队情况，动态调整
             phase = 'ramp up'
@@ -88,9 +89,10 @@ class InferenceEngine:
 
             # 交模型推理，取回结果
             with torch.no_grad():
-                logits, values = self.eval_model(batch_tensor)
-            probs = torch.nn.functional.softmax(logits, dim=-1).cpu().numpy()
-            values = values.cpu().numpy()
+                with torch.amp.autocast('cuda'):  # 混合精度
+                    logits, values = self.eval_model(batch_tensor)
+            probs = torch.nn.functional.softmax(logits.float(), dim=-1).cpu().numpy()
+            values = values.float().cpu().numpy()
 
             self.deliver_result(requests, probs, values)
             print(

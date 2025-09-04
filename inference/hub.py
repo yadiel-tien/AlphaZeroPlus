@@ -62,9 +62,9 @@ class ServerHub:
                         self.shutdown()
 
         except ConnectionError as e:  # 对方断开
-            self.logger.error(e)
+            self.logger.info(e)
         except socket.timeout:
-            self.logger.error('Socket timed out')
+            self.logger.info('Socket timed out')
 
     def register(self, env_name: EnvName, model_id: int) -> str:
         """注册infer，并返回连接该infer的socket地址"""

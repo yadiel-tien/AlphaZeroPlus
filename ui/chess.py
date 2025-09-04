@@ -27,7 +27,8 @@ class ChineseChessUI(GameUI):
         self.env = cast(ChineseChess, self.env)
         self.selected_pos: tuple[int, int] | None = None
         self.settings = settings
-        self.check_buffer = {'action': -1, 'checkmate': False, 'check': False, 'red_dot': {}}
+        self.check_buffer = {'action': -1, 'checkmate': False, 'check': False}
+        self.safe_move_cache: dict[int, bool] = {}
 
     def init_resource(self) -> None:
         """加载棋子和标记图片"""
@@ -53,10 +54,9 @@ class ChineseChessUI(GameUI):
             action = self.env.move2action(move)
             if action in self.env.valid_actions:
                 player.pending_action = action
-                self.place_sound.play()
-            self.selected_pos = None
-            if player.pending_action == -1:
+            else:
                 self.piece_sound.play()
+            self.selected_pos = None
         else:
             # 选择棋子
             chosen_piece = self.env.state[player.selected_grid + (0,)]
@@ -68,8 +68,21 @@ class ChineseChessUI(GameUI):
                 self.selected_pos = player.selected_grid
                 self.piece_sound.play()
 
+                # 更新safe_move_cache
+                self.refresh_save_move_cache(self.selected_pos)
+
+    def refresh_save_move_cache(self, pos: tuple[int, int]) -> None:
+        """根据选中棋子刷新缓存"""
+        self.safe_move_cache.clear()
+        valid_actions = self.env.get_valid_action_from_pos(pos)
+        for action in valid_actions:
+            new_state = self.env.virtual_step(self.env.state, action)
+            self.safe_move_cache[action] = not self.env.is_check(new_state, self.env.player_to_move)
+
     def play_place_sound(self, action: int) -> None:
         """执行action时播放的音效"""
+        self.place_sound.play()
+
         if self.check_buffer['action'] != action:
             self.check_buffer['action'] = action
             self.check_buffer['checkmate'] = self.env.is_checkmate(self.env.state, self.env.player_to_move)
@@ -151,24 +164,13 @@ class ChineseChessUI(GameUI):
     def draw_dot_mark(self) -> None:
         """用来指示所有可走棋步"""
         if self.selected_pos:
-            is_red_dot = self.check_buffer['red_dot']
-            piece = int(self.env.state[self.selected_pos + (0,)])
-            grids = self.env.dest_func[piece](self.env.state, *self.selected_pos)
-            for grid in grids:
-                x, y = self._grid2pos(grid)
-                # 模拟行棋，如果导致自身被将，则标红，否则标绿
-                move = self.selected_pos + grid
-                action = self.env.move2action(move)
-                if len(is_red_dot) == len(grids):  # 已有缓存，避免重复计算
-                    if is_red_dot[action]:
-                        self.screen.blit(self.mark_pics['red_dot'], (x, y))
-                    else:
-                        self.screen.blit(self.mark_pics['green_dot'], (x, y))
-                else:  # 重建缓存
-                    new_state = self.env.virtual_step(self.env.state, action)
-                    is_red_dot[action] = self.env.is_check(new_state, self.env.player_to_move)
-        else:
-            self.check_buffer['red_dot'] = {}
+            for action, is_safe in self.safe_move_cache.items():
+                _, _, tr, tc = self.env.action2move(action)
+                x, y = self._grid2pos((tr, tc))
+                if is_safe:
+                    self.screen.blit(self.mark_pics['green_dot'], (x, y))
+                else:
+                    self.screen.blit(self.mark_pics['red_dot'], (x, y))
 
     def _grid2pos(self, grid: tuple[int, int]) -> tuple[int, int]:
         """调节位置偏差"""

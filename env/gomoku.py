@@ -5,6 +5,7 @@ from gymnasium import spaces
 from numpy.typing import NDArray
 
 from utils.config import CONFIG
+from utils.mirror import reverse_board_policy
 from utils.types import GomokuMove, GameResult
 import numpy as np
 
@@ -175,3 +176,7 @@ class Gomoku(BaseEnv):
             else:
                 print("输入位置不合法，请重新输入！")
         return action
+
+    @classmethod
+    def restore_policy(cls, policy: NDArray, symmetry_idx: int) -> NDArray:
+        return reverse_board_policy(policy, symmetry_idx, cls.shape)

@@ -3,7 +3,7 @@ import os
 import queue
 import socket
 import time
-from typing import Self
+from typing import Self, cast
 
 import numpy as np
 from numpy.typing import NDArray
@@ -11,7 +11,7 @@ from numpy.typing import NDArray
 from env.env import BaseEnv
 from inference.client import send_request, apply_for_socket_path
 from utils.config import CONFIG
-from utils.types import GameResult
+from utils.types import GameResult, EnvName
 
 
 class DummyNode(object):
@@ -123,7 +123,7 @@ class NeuronNode:
         # 转换为适合神经网络的表示
         state = self.env.convert_to_network(self.state, self.player_to_move)
         # 发送到推理进程推理，获取policy和value
-        policy, value = send_request(sock, state, self.env.__name__, infer_queue, is_self_play)
+        policy, value = send_request(sock, state, cast(EnvName, self.env.__name__), infer_queue, is_self_play)
         # 给孩子赋予先验概率
         self.child_p = self.smoothed_policy(policy, 0.1)
         # 在根节点添加噪声，增加对弈的随机性
@@ -138,6 +138,8 @@ class NeuronNode:
 
     def smoothed_policy(self, policy: NDArray[np.float32], epsilon=0.03) -> NDArray[np.float32]:
         """避免存在概率为0的动作，让所有动作都有被选择的可能"""
+        if self.valid_actions.size == 0:
+            return policy
         uniform = np.zeros_like(policy, dtype=np.float32)
         uniform[self.valid_actions] = 1.0 / self.valid_actions.size
         policy = (1 - epsilon) * policy + epsilon * uniform
@@ -230,11 +232,13 @@ class NeuronMCTS:
         # 需要等服务端建立好文件
         start = time.time()
         while not os.path.exists(sock_path):
-            if time.time() - start > 5:
-                raise RuntimeError(f"{sock_path} not found,mcts setup failed!")
-            time.sleep(0.1)
-
-        mcts.sock.connect(sock_path)
+            try:
+                mcts.sock.connect(sock_path)
+                break
+            except (ConnectionRefusedError, FileNotFoundError):
+                time.sleep(0.1)
+                if time.time() - start > 5:
+                    raise RuntimeError(f"Connection to {sock_path} time out,mcts setup failed!")
         return mcts
 
     def choose_action(self) -> int:

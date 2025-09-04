@@ -16,11 +16,12 @@ from player.ai_server import AIServer
 
 app = Flask(__name__)
 AIes: dict[str, AIServer] = {}
-clients: dict[str, float] = {}
+clients_live_time: dict[str, float] = {}
+lock = threading.Lock()
 
 
 def require_json(f: Callable) -> Callable:
-    """将获取data，检查data的内容抽取成装饰漆"""
+    """将获取data，检查data的内容抽取成装饰器"""
 
     @wraps(f)
     def wrapper(*args: Any, **kwargs: Any) -> Any:
@@ -41,8 +42,9 @@ def setup(data: Any) -> Any:
 
         # 分配pid
         pid = str(uuid.uuid4())
-        clients[pid] = time.time()
-        AIes[pid] = AIServer(env_name, model_id, 1000)
+        with lock:
+            clients_live_time[pid] = time.time()
+            AIes[pid] = AIServer(env_name, model_id, 2000)
         return jsonify({"status": "success", 'pid': pid})
     except Exception as e:
         print(f'Failed to setup AI: {e}')
@@ -54,14 +56,17 @@ def setup(data: Any) -> Any:
 def make_move(data: Any) -> Any:
     try:
         pid = data['pid']
-        if pid not in AIes:
-            return jsonify({"error": "Player has not been setup properly!"}), 400
+        with lock:
+            if pid not in AIes:
+                return jsonify({"error": "Player has not been setup properly!"}), 400
 
-        clients[pid] = time.time()
+            clients_live_time[pid] = time.time()
+            player = AIes[pid]
+
         state = np.array(data['array'], dtype=np.float32)
         last_action = data['action']
         player_to_move = data['player_to_move']
-        action = AIes[pid].get_action(state, last_action, player_to_move)
+        action = player.get_action(state, last_action, player_to_move)
         return jsonify({"status": "success", "action": action})
     except Exception as e:
         traceback.print_exc()
@@ -73,11 +78,14 @@ def make_move(data: Any) -> Any:
 def reset(data: Any) -> Any:
     try:
         pid = data['pid']
-        if pid not in AIes:
-            return jsonify({"error": "Player has not been setup properly!"}), 400
+        with lock:
+            if pid not in AIes:
+                return jsonify({"error": "Player has not been setup properly!"}), 400
 
-        clients[pid] = time.time()
-        AIes[pid].reset()
+            clients_live_time[pid] = time.time()
+            player = AIes[pid]
+
+        player.reset()
         return jsonify({"status": 'success'})
     except Exception as e:
         return jsonify({"error": f'Failed to reset:{e}'}), 400
@@ -88,10 +96,12 @@ def reset(data: Any) -> Any:
 def heartbeat(data: Any) -> Any:
     try:
         pid = data['pid']
-        if pid not in AIes:
-            return jsonify({"error": "Player has not been setup properly!"}), 400
+        with lock:
+            if pid not in AIes:
+                return jsonify({"error": "Player has not been setup properly!"}), 400
 
-        clients[pid] = time.time()
+            clients_live_time[pid] = time.time()
+
         return jsonify({"status": 'success'})
     except Exception as e:
         return jsonify({"error": f'Failed to reset:{e}'}), 400
@@ -102,14 +112,15 @@ def cleanup_dead_clients(timeout=60):
     while True:
         now = time.time()
         to_delete = []
-        for pid, last_beat in clients.items():
-            if now - last_beat > timeout:
-                to_delete.append(pid)
+        with lock:
+            for pid, last_beat in clients_live_time.items():
+                if now - last_beat > timeout:
+                    to_delete.append(pid)
 
-        for pid in to_delete:
-            clients.pop(pid)
-            player = AIes.pop(pid)
-            player.shutdown()  # 清理player中的mcts
+            for pid in to_delete:
+                clients_live_time.pop(pid)
+                player = AIes.pop(pid)
+                player.shutdown()  # 清理player中的mcts
 
         time.sleep(timeout)
 

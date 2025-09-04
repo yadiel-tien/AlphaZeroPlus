@@ -19,20 +19,18 @@ class AIClient(Player):
         self.pid = ''
         self.description = f'AI({model_idx})'
         self.time_stamp = 0
-        t = threading.Thread(target=self.request_setup)
-        t.start()
-        t.join()
+        self.session = requests.Session()
+        self.request_setup()
+        self.alive = True
+        threading.Thread(target=self._heartbeat_loop, daemon=True).start()
 
     def update(self, env: BaseEnv) -> None:
         """负责启动推理线程"""
-        # 每30s发送一次心跳
-        if time.time() - self.time_stamp > 30:
-            self.send_heartbeat()
-
         if not self.is_thinking:
             # 新线程运行MCTS
             self.is_thinking = True
-            threading.Thread(target=self.request_move, args=(env.state, env.last_action, env.player_to_move)).start()
+            threading.Thread(target=self.request_move, args=(env.state, env.last_action, env.player_to_move),
+                             daemon=True).start()
 
     def request_move(self, state: np.ndarray, last_action: int, player_to_move: int) -> None:
         """给server发请求，获取action"""
@@ -52,16 +50,19 @@ class AIClient(Player):
         """告知server重置"""
         url = CONFIG['base_url'] + 'reset'
         payload = {'pid': self.pid}
-        t = (threading.Thread(target=self.post_request, args=(url, payload)))
-        t.start()
-        t.join()
+        self.post_request(url, payload)
+
+    def _heartbeat_loop(self):
+        while self.alive:
+            self.send_heartbeat()
+            time.sleep(30)
 
     def send_heartbeat(self) -> None:
         """通过定期发送心跳告知服务端存活，以再服务端保留资源"""
         self.time_stamp = time.time()
         url = CONFIG['base_url'] + 'heartbeat'
         payload = {'pid': self.pid}
-        threading.Thread(target=self.post_request, args=(url, payload)).start()
+        self.post_request(url, payload)
 
     def request_setup(self) -> None:
         """告知server创建推理引擎"""
@@ -75,7 +76,7 @@ class AIClient(Player):
         response = None
         try:
             headers = {'content-type': 'application/json'}
-            response = requests.post(
+            response = self.session.post(
                 url,
                 data=json.dumps(payload),
                 headers=headers,
@@ -108,3 +109,6 @@ class AIClient(Player):
     def reset(self) -> None:
         self.request_reset()
         super().reset()
+
+    def shutdown(self) -> None:
+        self.alive = False

@@ -73,7 +73,7 @@ class SelfPlayManager:
     def self_play_worker(self, iteration: int) -> tuple[list[
         tuple[NDArray, NDArray, float]], int]:
         """进行一局游戏，收集经验
-        :return [(state,pi,q),...],winner.winner0,1代表获胜玩家，-1代表平局"""
+        :return [(state,pi_move,q),...],winner.winner0,1代表获胜玩家，-1代表平局"""
 
         env = self.env_class()
         state, _ = env.reset()
@@ -85,27 +85,19 @@ class SelfPlayManager:
         step = 0
         experiences = []
         while not env.terminated and not env.truncated:
-            # 动态temperature
-
-            if iteration < 30 or step < 10:
-                temperature = 1  # 前期鼓励探索
-            elif iteration < 200:
-                temperature = 0.5
-            elif iteration < 500:
-                temperature = 0.2
-            else:
-                temperature = 0.1
             # 动态n_simulation
-            n_simulation = 200 + min(iteration / 100, 1) * 300
+            n_simulation = 200 + min(iteration / 400, 2) * 300
             # n_simulation = 300
             mcts.run(int(n_simulation))  # 模拟
 
+            pi_target = mcts.get_pi(1.0)
+            temperature = 1.0 if step < 20 else 0.1
             pi = mcts.get_pi(temperature)  # 获取mcts的概率分布pi
 
             # 象棋表示state和神经网络state不一样，需要转换。五子棋也进行了接口匹配
             state = env.convert_to_network(env.state, env.player_to_move)
             # 前20轮用z，后面改为q
-            experiences.append((state, pi, env.player_to_move))
+            experiences.append((state, pi_target, env.player_to_move))
 
             action = np.random.choice(len(pi), p=pi)
             env.step(action)  # 执行落子
@@ -118,7 +110,7 @@ class SelfPlayManager:
                 no_capture_count = round(float(state[0, 0, -1]) * 100)
                 # piece_count = np.count_nonzero(env.state[:, :, 0] + 1)
                 # step_limit = 100 - (piece_count - 9) * 3
-                if no_capture_count > 25 or step > 150:
+                if no_capture_count > 30 or step > 150:
                     break
 
         mcts.shutdown()
@@ -127,7 +119,7 @@ class SelfPlayManager:
         print(f'winner: {env.winner},steps: {step}')
 
         # 平局或着截断数据大部分丢弃
-        if env.winner in (-1, 2) and random.random() < 0.8:
+        if env.winner in (-1, 2) and random.random() < 0.5:
             return [], env.winner
 
         # 以当前玩家视角获取reward，胜1负-1平0

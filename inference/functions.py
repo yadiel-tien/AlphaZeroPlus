@@ -17,7 +17,7 @@ def send(sock: socket.socket, obj: Any) -> None:
     # !表示网络字节序（big endian），跨平台兼容 TCP/Unix _socket
     # I 表示一个无符号4字节整数（unsignedint，范围0~4, 294, 967, 295）
     # pack将长度数字转为字节
-    length = struct.pack('I', len(payload))
+    length = struct.pack('!I', len(payload))
     sock.sendall(length + payload)
 
 
@@ -28,7 +28,7 @@ def recv(sock: socket.socket) -> Any:
 
     # unpack() 总是返回一个 tuple，哪怕只有一个字段，也得用 [0] 拿出来
     # 用unpack将字节转换为长度
-    msg_length = struct.unpack('I', raw_length)[0]
+    msg_length = struct.unpack('!I', raw_length)[0]
     # 获取payload
     data = _recv_all(sock, msg_length)
     return pickle.loads(data)
