@@ -62,6 +62,7 @@ class InferServer(InferenceEngine):
                 conn, _ = self._server_sock.accept()
                 with self.lock:
                     self.client_count += 1
+                    print(f'New connection established, total {self.client_count} clients')
                 self._listen_pool.submit(self.handle_client, conn)
             except socket.timeout:
                 continue

@@ -231,7 +231,7 @@ class NeuronMCTS:
 
         # 需要等服务端建立好文件
         start = time.time()
-        while not os.path.exists(sock_path):
+        while True:
             try:
                 mcts.sock.connect(sock_path)
                 break
