@@ -10,7 +10,7 @@ def main():
 
     register_sigint(manager.shutdown)
 
-    manager.run(iteration=200, n_games=100)
+    manager.run(iteration=200, n_games=200)
 
     manager.shutdown()
 

@@ -6,6 +6,7 @@ import time
 
 from inference.functions import recv, send, get_model_name
 from inference.infer_server import InferServer
+from network.functions import read_latest_index
 from utils.config import CONFIG
 from utils.logger import get_logger
 from utils.types import EnvName
@@ -68,6 +69,8 @@ class ServerHub:
 
     def register(self, env_name: EnvName, model_id: int) -> str:
         """注册infer，并返回连接该infer的socket地址"""
+        if model_id == 0:  # model_id=0代表使用最新模型
+            model_id = read_latest_index(env_name)
         name = get_model_name(env_name, model_id)
         with self.lock:
             if name not in self.infers:

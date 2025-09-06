@@ -1,5 +1,4 @@
 import collections
-import os
 import queue
 import socket
 import time
@@ -29,7 +28,7 @@ class NeuronNode:
                  player_to_move: int,
                  env_class: type[BaseEnv],
                  parent: Self = None,
-                 c=5):
+                 c=3.5):
         self.state = state
         self.parent = parent if parent else DummyNode()
         self.c = c
@@ -45,9 +44,16 @@ class NeuronNode:
         self.child_p = np.zeros(self.n_actions, dtype=np.float32)  # 先验概率
         self.is_expanded = False
         self.leaf_reward = GameResult.ONGOING  # 终局的奖励，1胜，0平，-1负，2未结束
+        self.win_rate = 0.5
 
     def __repr__(self) -> str:
         return f'move={self.env.action2move(self.last_action) if self.last_action != -1 else -1},N={self.n},W={self.w:.2f}'
+
+    @property
+    def depth(self) -> int:
+        if not self.children:
+            return 1
+        return max(child.depth + 1 for child in self.children.values())
 
     @property
     def n(self) -> float:
@@ -82,10 +88,6 @@ class NeuronNode:
         """节点价值=u+q"""
         return self.child_q + self.child_u
 
-    @property
-    def win_rate(self) -> float:
-        return (self.w / self.n + 1) / 2
-
     def get_child(self, action: int) -> Self:
         """在当前动作下执行action后产生一个子Node返回"""
         if action in self.valid_actions:
@@ -118,14 +120,21 @@ class NeuronNode:
                                                      1 - self.player_to_move,
                                                      self.last_action)  # 1胜，0平，-1负, 2未分胜负
         if self.leaf_reward != GameResult.ONGOING:
+            self.win_rate = (self.leaf_reward + 1) / 2
             return float(self.leaf_reward)
 
         # 转换为适合神经网络的表示
         state = self.env.convert_to_network(self.state, self.player_to_move)
         # 发送到推理进程推理，获取policy和value
         policy, value = send_request(sock, state, cast(EnvName, self.env.__name__), infer_queue, is_self_play)
+        # 记录胜率
+        self.win_rate = (-value + 1) / 2
+        # 概率归一化
+        scale = policy.sum()
+        if scale > 0:
+            policy = policy / scale
         # 给孩子赋予先验概率
-        self.child_p = self.smoothed_policy(policy, 0.1)
+        self.child_p = policy
         # 在根节点添加噪声，增加对弈的随机性
         if is_self_play and isinstance(self.parent, DummyNode):
             self.inject_noise()
@@ -135,15 +144,6 @@ class NeuronNode:
         # 若value拟合的z，代表从该state出发，当前玩家最终得到的平均奖励，结果需要取反
         # 若value拟合的q，代表对上个玩家的平均奖励，则无需取反
         return -value
-
-    def smoothed_policy(self, policy: NDArray[np.float32], epsilon=0.03) -> NDArray[np.float32]:
-        """避免存在概率为0的动作，让所有动作都有被选择的可能"""
-        if self.valid_actions.size == 0:
-            return policy
-        uniform = np.zeros_like(policy, dtype=np.float32)
-        uniform[self.valid_actions] = 1.0 / self.valid_actions.size
-        policy = (1 - epsilon) * policy + epsilon * uniform
-        return policy
 
     def back_propagate(self, result: float) -> None:
         """反向传播评估结果"""
@@ -163,6 +163,7 @@ class NeuronNode:
         noise = np.random.dirichlet([alpha] * legal_len)
         self.child_p[self.valid_actions] = noise * noise_weight + (1 - noise_weight) * self.child_p[
             self.valid_actions]
+        self.child_p[self.valid_actions] /= self.child_p[self.valid_actions].sum()
 
     def cleanup(self) -> None:
         """手动清理，断开连接，因为node间相互引用，gc清理较慢"""

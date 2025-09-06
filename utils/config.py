@@ -26,6 +26,7 @@ class GameConfig(TypedDict):
     n_actions: int
     img_path: str
     state_shape: tuple[int, ...]
+    tao_switch_steps: int
 
 
 class AppConfig(TypedDict):
@@ -62,10 +63,11 @@ CONFIG: AppConfig = {
         'n_filter': 256,
         'state_shape': (10, 9, 20),
         'n_cells': 10 * 9,
-        'n_res_blocks': 9,
+        'n_res_blocks': 15,
         'n_channels': 20,
         'n_actions': 2086,
-        'img_path': './graphics/chess/board.jpeg'
+        'img_path': './graphics/chess/board.jpeg',
+        'tao_switch_steps': 20
     },
     'Gomoku': {
         'screen_size': (600, 800),
@@ -73,16 +75,17 @@ CONFIG: AppConfig = {
         'n_filter': 256,
         'state_shape': (15, 15, 2),
         'n_cells': 15 * 15,
-        'n_res_blocks': 7,
+        'n_res_blocks': 10,
         'n_channels': 2,
         'n_actions': 15 * 15,
-        'img_path': './graphics/gomoku/board.jpeg'
+        'img_path': './graphics/gomoku/board.jpeg',
+        'tao_switch_steps': 10
     },
     'data_dir': './data/',
     'dirichlet': 0.2,
     'base_url': 'http://192.168.0.126:5000/',
     'device': 'cuda:0',
-    'game_name': 'ChineseChess',
+    'game_name': 'Gomoku',
     'socket_path_prefix': './inference/socks/',
     'hub_socket_path': './inference/socks/hub.sock',
     'train_socket_path': cwd + '/inference/socks/train.sock',

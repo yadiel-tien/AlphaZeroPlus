@@ -18,7 +18,6 @@ class InferenceEngine:
         # 推理model
         self.eval_model, self.model_index = Net.make_model(model_index, env_name)
         self.eval_model.to(CONFIG['device']).eval()
-        self.eval_model = torch.compile(self.eval_model)  # 优化
         self.env_name = env_name
         self.name = get_model_name(env_name, model_index)
         # 负责单个request的发送接收
@@ -28,6 +27,7 @@ class InferenceEngine:
         self.infer_queue: queue.Queue[list[QueueRequest | SocketRequest]] = queue.Queue()
         self._infer_thread: threading.Thread | None = None
         self.running = False
+        self.model_lock = threading.Lock()
 
     def start(self) -> None:
         """启动推理线程"""
@@ -90,7 +90,8 @@ class InferenceEngine:
             # 交模型推理，取回结果
             with torch.no_grad():
                 with torch.amp.autocast('cuda'):  # 混合精度
-                    logits, values = self.eval_model(batch_tensor)
+                    with self.model_lock:
+                        logits, values = self.eval_model(batch_tensor)
             probs = torch.nn.functional.softmax(logits.float(), dim=-1).cpu().numpy()
             values = values.float().cpu().numpy()
 

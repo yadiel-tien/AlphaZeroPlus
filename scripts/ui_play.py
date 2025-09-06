@@ -1,5 +1,6 @@
 import sys
 
+
 sys.path.append('/Users/flashlight/PycharmProjects/FiveInARow/')
 from utils.types import EnvName
 import pygame
@@ -18,7 +19,7 @@ class Game:
         pygame.init()
         self.screen = pygame.display.set_mode(settings['screen_size'])
         pygame.display.set_caption(game_name)
-        self.players = [AIClient(700, game_name), AIClient(726, game_name)]
+        self.players = [Human(game_name), AIClient(878, game_name)]
         if game_name == 'Gomoku':
             self.board = GomokuUI(self.players)
         else:

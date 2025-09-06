@@ -22,6 +22,7 @@ class AIClient(Player):
         self.session = requests.Session()
         self.request_setup()
         self.alive = True
+        self.win_rate = 0.5
         threading.Thread(target=self._heartbeat_loop, daemon=True).start()
 
     def update(self, env: BaseEnv) -> None:
@@ -44,6 +45,7 @@ class AIClient(Player):
         response = self.post_request(url, payload)
 
         self.pending_action = response.get('action')
+        self.win_rate = response.get('win_rate')
         self.is_thinking = False
 
     def request_reset(self) -> None:
@@ -55,14 +57,15 @@ class AIClient(Player):
     def _heartbeat_loop(self):
         while self.alive:
             self.send_heartbeat()
-            time.sleep(30)
+            time.sleep(5)
 
     def send_heartbeat(self) -> None:
         """通过定期发送心跳告知服务端存活，以再服务端保留资源"""
         self.time_stamp = time.time()
         url = CONFIG['base_url'] + 'heartbeat'
         payload = {'pid': self.pid}
-        self.post_request(url, payload)
+        response = self.post_request(url, payload)
+        self.win_rate = response.get('win_rate')
 
     def request_setup(self) -> None:
         """告知server创建推理引擎"""
@@ -109,6 +112,7 @@ class AIClient(Player):
     def reset(self) -> None:
         self.request_reset()
         super().reset()
+        self.win_rate = 0.5
 
     def shutdown(self) -> None:
         self.alive = False

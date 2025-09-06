@@ -1,14 +1,16 @@
 from abc import ABC, abstractmethod
-from typing import TypeAlias, Literal
+from typing import TypeAlias, Literal, cast
 
 import pygame
 
 from env.env import BaseEnv
+from player.ai_client import AIClient
 from .button import Button
 from utils.timer import Timer
 from player.human import Human, Player
 
 GameStatus: TypeAlias = Literal['new', 'playing', 'finished']
+
 
 class GameUI(ABC):
     def __init__(self, env: BaseEnv, players: list[Player], img_path: str) -> None:
@@ -132,15 +134,20 @@ class GameUI(ABC):
 
     def draw_player(self):
         self.timers[self.env.player_to_move].update()
-        white_sec = self.timers[1].remain // 1000
-        black_sec = self.timers[0].remain // 1000
-        font = pygame.font.Font(None, 60)
-        white = font.render(f'{self.players[1].description}  White:{white_sec:02}', True, 'orange')
-        black = font.render(f'{self.players[0].description} Black:{black_sec:02}', True, 'orange')
-        white_rect = white.get_rect(midleft=(60, 60))
-        black_rect = black.get_rect(midleft=(60, 740))
-        self.screen.blit(white, white_rect.topleft)
-        self.screen.blit(black, black_rect.topleft)
+        desc_vertical_positions = [740, 60]
+        sides = ["Red", "Black"]
+        for i, player in enumerate(self.players):
+            time_remain = self.timers[i].remain // 1000
+            font = pygame.font.Font(None, 60)
+            desc = font.render(f'{player.description}  {sides[i]}:{time_remain:02}', True, 'orange')
+            desc_rect = desc.get_rect(midleft=(60, desc_vertical_positions[i]))
+            self.screen.blit(desc, desc_rect.topleft)
+
+            if isinstance(player, AIClient):
+                win_rate = cast(AIClient, player).win_rate
+                font = pygame.font.Font(None, 30)
+                win_rate_label = font.render(f'win rate:{win_rate:.2%} ', True, 'gray')
+                self.screen.blit(win_rate_label, (220, desc_rect.bottom + 10))
 
     def _pos2grid(self, pos: tuple[int, int]) -> tuple[int, int] | None:
         """根据屏幕坐标，返回棋盘位置，超出棋盘返回None

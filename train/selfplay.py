@@ -6,7 +6,7 @@ from tqdm import tqdm
 from env.functions import get_class
 from utils.logger import get_logger
 from utils.replay import NumpyBuffer
-from utils.config import game_name
+from utils.config import game_name, settings
 from mcts.deepMcts import NeuronMCTS
 from inference.client import require_fit, require_train_server_shutdown
 from network.functions import read_latest_index
@@ -18,7 +18,7 @@ class SelfPlayManager:
         self.logger = get_logger('selfplay')
         self.latest_model_index = read_latest_index()
         self.n_workers = n_workers
-        self.buffer = NumpyBuffer(500_000, 128)
+        self.buffer = NumpyBuffer(500_000, 2048)
         self.buffer.load()
         self.env_class = get_class(game_name)
 
@@ -33,6 +33,9 @@ class SelfPlayManager:
                 f'iteration {i + 1}/{iteration},latest: {self.latest_model_index}')
             # self_play
             self.logger.info(f'selfplay iteration {i + 1}/{iteration},latest: {self.latest_model_index}')
+            while self.buffer.size < self.buffer.capacity * 0.8:
+                self.self_play(iteration=self.latest_model_index, n_games=50)
+                self.logger.info(f'Collecting data.Current buffer size: {self.buffer.size}.')
             data_count = self.self_play(iteration=self.latest_model_index, n_games=n_games)
 
             # 训练网络，保存网络
@@ -86,12 +89,12 @@ class SelfPlayManager:
         experiences = []
         while not env.terminated and not env.truncated:
             # 动态n_simulation
-            n_simulation = 200 + min(iteration / 400, 2) * 300
+            n_simulation = 200 + min(iteration / 200, 2) * 300
             # n_simulation = 300
             mcts.run(int(n_simulation))  # 模拟
 
             pi_target = mcts.get_pi(1.0)
-            temperature = 1.0 if step < 20 else 0.1
+            temperature = 1.0 if step < settings['tao_switch_steps'] else 0.2
             pi = mcts.get_pi(temperature)  # 获取mcts的概率分布pi
 
             # 象棋表示state和神经网络state不一样，需要转换。五子棋也进行了接口匹配

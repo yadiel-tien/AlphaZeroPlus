@@ -23,7 +23,7 @@ class TrainServer(InferServer):
         self.fit_model, _ = Net.make_model(self.model_index, env_name)
         self.fit_model.to(CONFIG['device'])
         self.optimizer = torch.optim.Adam(self.fit_model.parameters(), lr=1e-3, weight_decay=1e-4)
-        self.buffer = NumpyBuffer(500_000, 128)
+        self.buffer = NumpyBuffer(500_000, 2048)
 
     @property
     def socket_path(self) -> str:
@@ -86,7 +86,7 @@ class TrainServer(InferServer):
         start = time.time()
         # 加载最新buffer
         self.buffer.load()
-        epochs = n_exp // self.buffer.batch_size
+        epochs = n_exp * 20 // self.buffer.batch_size
         for epoch in range(epochs):
             # 批量数据获取
             states, pis, zs = self.buffer.get_batch()
@@ -135,7 +135,8 @@ class TrainServer(InferServer):
         model_path = get_model_path(self.env_name, iteration)
         torch.save(self.fit_model.state_dict(), model_path)
         # 更新推理模型
-        self.eval_model.load_state_dict(self.fit_model.state_dict())
+        with self.model_lock:
+            self.eval_model.load_state_dict(self.fit_model.state_dict())
         self.model_index = iteration
         duration = time.time() - start
         self.logger.info(f"iteration{iteration}:{epochs}轮训练完成，共用时{duration:.2f}秒。")

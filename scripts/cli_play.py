@@ -10,7 +10,7 @@ from utils.config import game_name
 if __name__ == "__main__":
     latest_model = read_latest_index()
     env = get_class(game_name)()
-    with AIServer(game_name, latest_model, n_simulation=1000) as ai, AIServer(game_name, latest_model - 20,
+    with AIServer(game_name, latest_model, n_simulation=1000) as ai, AIServer(game_name, 600,
                                                                               n_simulation=1000) as ai2:
-        result = env.run((ai, Human(game_name)))
+        result = env.run((Human(game_name), ai))
     env.render()

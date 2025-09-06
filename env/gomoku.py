@@ -5,7 +5,7 @@ from gymnasium import spaces
 from numpy.typing import NDArray
 
 from utils.config import CONFIG
-from utils.mirror import reverse_board_policy
+from utils.mirror import reverse_board_policy, apply_symmetry, mirror_board_policy
 from utils.types import GomokuMove, GameResult
 import numpy as np
 
@@ -180,3 +180,22 @@ class Gomoku(BaseEnv):
     @classmethod
     def restore_policy(cls, policy: NDArray, symmetry_idx: int) -> NDArray:
         return reverse_board_policy(policy, symmetry_idx, cls.shape)
+
+    @classmethod
+    def augment_data(self, data: tuple[NDArray, NDArray, float]) -> list[tuple[NDArray, NDArray, float]]:
+        """通过旋转和翻转棋盘进行数据增强
+            - ChineseChess 支持水平翻转
+            - Gomoku 支持8种增强
+        :param data: (state,pi,q)
+         :return 增强后的列别[(state,pi,q)]"""
+        state, pi, q = data
+        augmented_samples = []
+        if state.shape[0] == state.shape[1]:
+            indices = range(8)
+        else:  # 非方形棋盘
+            indices = (0, 2, 4, 5)
+        for i in indices:
+            transformed_state = apply_symmetry(state.copy(), i)
+            transformed_prob = mirror_board_policy(pi.copy(), i, state.shape)
+            augmented_samples.append((transformed_state, transformed_prob, q))
+        return augmented_samples

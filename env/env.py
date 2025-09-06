@@ -170,3 +170,13 @@ class BaseEnv(gym.Env, ABC):
         self.player_to_move = 0
         self.terminated = False
         self.truncated = False
+
+    @classmethod
+    @abstractmethod
+    def augment_data(cls, data: tuple[NDArray, NDArray, float]) -> list[tuple[NDArray, NDArray, float]]:
+        """通过旋转和翻转棋盘进行数据增强
+            - ChineseChess 支持水平翻转
+            - Gomoku 支持8种增强
+        :param data: (state,pi,q)
+        :return 增强后的列别[(state,pi,q)]"""
+        ...

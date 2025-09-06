@@ -14,6 +14,7 @@ class AIServer(Player):
         self.mcts: NeuronMCTS | None = None
         self.silent = silent  # silent=True减少日志信息
         self.description = f'Server {self.model_id}'
+        self.win_rate = 0.5
 
     def get_action(self, state: NDArray, last_action: int, player_to_move: int) -> int:
         """获取动作"""
@@ -36,9 +37,13 @@ class AIServer(Player):
             )
         else:
             self.mcts.apply_action(last_action)
+        print(f'before run: root width:{len(self.mcts.root.children)},depth:{self.mcts.root.depth}')
         self.mcts.run(self._n_simulation)
+        print(f'after run: root width:{len(self.mcts.root.children)},depth:{self.mcts.root.depth}')
         self.pending_action = self.mcts.choose_action()
+        print(f'after choose: root width:{len(self.mcts.root.children)},depth:{self.mcts.root.depth}')
         print(f'{self.description} win rate: {self.mcts.root.win_rate:.2%}')
+        self.win_rate = self.mcts.root.win_rate
         self.is_thinking = False
 
     def reset(self) -> None:

@@ -1,7 +1,7 @@
 from gymnasium import spaces
 from numpy.typing import NDArray
 from utils.config import CONFIG
-from utils.mirror import mirror_action_policy
+from utils.mirror import mirror_action_policy, switch_side_ip, apply_symmetry
 from utils.types import ChessMove, GameResult, PieceMoveFunc
 
 import numpy as np
@@ -573,3 +573,22 @@ class ChineseChess(BaseEnv):
                     destinations.append((tr, tc))
 
         return destinations
+
+    @classmethod
+    def augment_data(cls, data: tuple[NDArray, NDArray, float]) -> list[tuple[NDArray, NDArray, float]]:
+        """通过旋转和翻转棋盘进行数据增强
+            - ChineseChess 支持左右翻转，玩家反转
+        :param data: (state,pi,q)
+         :return 增强后的列别[(state,pi,q)]"""
+        state, pi, q = data
+        augmented_samples = []
+        indices = (0, 4, 5)
+        for i in indices:
+            if i == 5:
+                transformed_state = switch_side_ip(state.copy())
+            else:
+                transformed_state = apply_symmetry(state.copy(), i)
+            transformed_prob = mirror_action_policy(pi, i, cls.mirror_lr_actions,
+                                                    cls.mirror_ud_actions)
+            augmented_samples.append((transformed_state, transformed_prob, q))
+        return augmented_samples

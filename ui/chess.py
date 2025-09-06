@@ -76,8 +76,12 @@ class ChineseChessUI(GameUI):
         self.safe_move_cache.clear()
         valid_actions = self.env.get_valid_action_from_pos(pos)
         for action in valid_actions:
+            # 如果执行这步棋后，自己被将军则标记unsafe，但是已经胜利除外
             new_state = self.env.virtual_step(self.env.state, action)
             self.safe_move_cache[action] = not self.env.is_check(new_state, self.env.player_to_move)
+            _, _, tr, tc = self.env.action2move(action)
+            if new_state[tr, tc, 1] in (4, 11):
+                self.safe_move_cache[action] = True
 
     def play_place_sound(self, action: int) -> None:
         """执行action时播放的音效"""
@@ -108,9 +112,9 @@ class ChineseChessUI(GameUI):
         self.screen.fill('#DDDDBB')
         self.screen.blit(self.image, self.rect)
         self.draw_last_mark()
-        self.draw_dot_mark()
         self.draw_pieces()
         self.draw_select_piece()
+        self.draw_dot_mark()
         if self.status == 'finished':
             self.draw_victory_badge()
             self.start_btn.draw()
@@ -176,3 +180,4 @@ class ChineseChessUI(GameUI):
         """调节位置偏差"""
         x, y = super()._grid2pos(grid)
         return x - 4 - x // 200, y - y // 100
+

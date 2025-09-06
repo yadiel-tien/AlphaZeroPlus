@@ -24,24 +24,6 @@ class ConvBlock(nn.Module):
         return self.relu(self.bn(self.conv(x)))
 
 
-class ResBlock(nn.Module):
-    def __init__(self, n_filters: int):
-        """残差块处理特征，输入输出结构一样[B,n_filters,H,W]"""
-        super().__init__()
-        self.conv1 = nn.Conv2d(n_filters, n_filters, kernel_size=3, stride=1, padding=1)
-        self.bn1 = nn.BatchNorm2d(n_filters)
-        self.relu1 = nn.ReLU()
-        self.conv2 = nn.Conv2d(n_filters, n_filters, kernel_size=3, stride=1, padding=1)
-        self.bn2 = nn.BatchNorm2d(n_filters)
-        self.relu2 = nn.ReLU()
-
-    def forward(self, x: Tensor) -> Tensor:
-        y = self.relu1(self.bn1(self.conv1(x)))
-        y = self.bn2(self.conv2(y))
-        y += x  # 残差连接
-        return self.relu2(y)
-
-
 class SEBlock(nn.Module):
     """Squeeze-and-Excitation Block,自调节通道权重，可用于增强网络性能。"""
     """暂时还没用"""
@@ -61,6 +43,31 @@ class SEBlock(nn.Module):
         y = self.avg_pool(x).view(b, c)
         y = self.fc(y).view(b, c, 1, 1)
         return x * y.expand_as(x)
+
+
+class ResBlock(nn.Module):
+    def __init__(self, n_filters: int, with_se: bool = False) -> None:
+        """残差块处理特征，输入输出结构一样[B,n_filters,H,W]"""
+        super().__init__()
+        self.conv1 = nn.Conv2d(n_filters, n_filters, kernel_size=3, stride=1, padding=1)
+        self.bn1 = nn.BatchNorm2d(n_filters)
+        self.relu1 = nn.ReLU()
+        self.conv2 = nn.Conv2d(n_filters, n_filters, kernel_size=3, stride=1, padding=1)
+        self.bn2 = nn.BatchNorm2d(n_filters)
+        # 可选seblock
+        self.with_se = with_se
+        if with_se:
+            self.se = SEBlock(n_filters)
+
+        self.relu2 = nn.ReLU()
+
+    def forward(self, x: Tensor) -> Tensor:
+        y = self.relu1(self.bn1(self.conv1(x)))
+        y = self.bn2(self.conv2(y))
+        y += x  # 残差连接
+        if self.with_se:
+            y = self.se(y)
+        return self.relu2(y)
 
 
 class PolicyHead(nn.Module):
@@ -116,7 +123,8 @@ class ValueHead(nn.Module):
 
 
 class Net(nn.Module):
-    def __init__(self, n_filters: int, n_cells=15 * 15, n_res_blocks=7, n_channels=2, n_actions=15 * 15) -> None:
+    def __init__(self, n_filters: int, n_cells=15 * 15, n_res_blocks=7, n_channels=2, n_actions=15 * 15,
+                 with_se: bool = False) -> None:
         """
         类alpha zero结构，双头输出policy和value
         :param n_filters: 卷积层通道数
@@ -125,7 +133,7 @@ class Net(nn.Module):
         """
         super().__init__()
         self.conv_block = ConvBlock(n_channels, n_filters)
-        self.res_blocks = nn.ModuleList([ResBlock(n_filters) for _ in range(n_res_blocks)])
+        self.res_blocks = nn.ModuleList([ResBlock(n_filters, with_se) for _ in range(n_res_blocks)])
         self.policy = PolicyHead(n_filters, 32, n_cells, n_actions)
         self.value = ValueHead(n_filters, 256, n_cells)
 
@@ -136,11 +144,11 @@ class Net(nn.Module):
         return self.policy(x), self.value(x)
 
     @classmethod
-    def make_model(cls, model_idx: int, env_name: EnvName) -> tuple[Self, int]:
+    def make_model(cls, model_idx: int, env_name: EnvName, with_se: bool = True) -> tuple[Self, int]:
         """根据idx获取模型和idx，如果idx不存在，返回初始模型和-1"""
         settings = CONFIG[env_name]
         model = cls(settings['n_filter'], settings['n_cells'], settings['n_res_blocks'],
-                    settings['n_channels'], settings['n_actions']).to(CONFIG['device'])
+                    settings['n_channels'], settings['n_actions'], with_se).to(CONFIG['device'])
         model_path = get_model_path(env_name, model_idx)
         if os.path.exists(model_path):
             model.load_state_dict(
