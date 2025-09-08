@@ -89,7 +89,7 @@ five_in_a_row/
 * **在【终端1】，启动训练与推理服务器:**
     ```bash
     source nogil_venv/bin/activate
-    python scripts/train_server.py
+    python -m scripts.train_server
     ```
     服务器会开始运行，等待来自自我对弈客户端的连接和训练指令。
 
@@ -97,7 +97,7 @@ five_in_a_row/
     ```bash
     source nogil_venv/bin/activate
     # 使用 -X gil=0 标志来彻底禁用GIL
-    python -X gil=0 scripts/selfplay.py
+    python -X gil=0 -m scripts.selfplay
     ```
     自我对弈程序会开始高速生成棋局数据，并在每轮结束后通知服务器进行训练。
 ### 2. 命令行对战 (Human vs. AI)
@@ -109,14 +109,14 @@ five_in_a_row/
     * 在**标准Python环境**环境中运行。
     ```bash
     conda active fiveInARow
-    python scripts/infer_hub.py # 假设这是您的Hub启动脚本
+    python -m scripts.infer_hub # 假设这是您的Hub启动脚本
   ```
 * **在【终端2 - 命令行对战界面】，启动AI对战API服务器:**
     * 这个服务器负责接收UI的请求并进行MCTS计算。
     * 在**标准Python环境**环境中运行或 **`nogil_venv`环境**都可以。
     ```bash
     conda active fiveInARow
-    python scripts/play_server.py # 这是您的Flask服务器
+    python -m scripts.play_server # 这是您的Flask服务器
     ```
 
 
@@ -129,14 +129,14 @@ five_in_a_row/
     * 在**标准Python环境**环境中运行。
     ```bash
     conda active fiveInARow
-    python scripts/infer_hub.py # 假设这是您的Hub启动脚本
+    python -m scripts.infer_hub # 假设这是您的Hub启动脚本
   ```
 * **在【终端2 - 远程后端服务】，启动AI对战API服务器:**
     * 这个服务器负责接收UI的请求并进行MCTS计算。通过http服务传输，支持局域网不同主机通信。
     * 在**标准Python环境**环境中运行。。
     ```bash
     conda active fiveInARow
-    python scripts/play_server.py # 这是您的Flask服务器
+    python -m scripts.play_server # 这是您的Flask服务器
     ```
 
 * **在【终端3 - 游戏界面】，启动Pygame UI客户端:**
@@ -144,7 +144,7 @@ five_in_a_row/
     * **必须**在能稳定运行Pygame的**标准Python环境**中运行。
     ```bash
     conda active fiveInARow
-    python scripts/ui_play.py # 这是您的Pygame主程序
+    python -m scripts.ui_play # 这是您的Pygame主程序
     ```
     Pygame窗口将会启动，您可以与通过API服务器运行的AI进行对战。
 

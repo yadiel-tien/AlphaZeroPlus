@@ -1,6 +1,3 @@
-import sys
-
-sys.path.append('/home/bigger/projects/five_in_a_row/')
 import threading
 import uuid
 import time

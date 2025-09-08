@@ -1,6 +1,3 @@
-import sys
-
-sys.path.append('/home/bigger/projects/five_in_a_row')
 from env.functions import get_class
 from network.functions import read_latest_index
 from player.human import Human
@@ -12,5 +9,5 @@ if __name__ == "__main__":
     env = get_class(game_name)()
     with AIServer(game_name, latest_model, n_simulation=1000) as ai, AIServer(game_name, 600,
                                                                               n_simulation=1000) as ai2:
-        result = env.run((ai,Human(game_name)))
+        result = env.run((ai, Human(game_name)))
     env.render()

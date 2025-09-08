@@ -1,6 +1,3 @@
-import sys
-
-sys.path.append('/home/bigger/projects/five_in_a_row')
 from utils.functions import register_sigint
 
 from inference.hub import ServerHub
