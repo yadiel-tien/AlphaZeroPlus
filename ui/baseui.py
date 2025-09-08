@@ -140,7 +140,7 @@ class GameUI(ABC):
             time_remain = self.timers[i].remain // 1000
             font = pygame.font.Font(None, 60)
             desc = font.render(f'{player.description}  {sides[i]}:{time_remain:02}', True, 'orange')
-            desc_rect = desc.get_rect(midleft=(60, desc_vertical_positions[i]))
+            desc_rect = desc.get_rect(center=(300, desc_vertical_positions[i]))
             self.screen.blit(desc, desc_rect.topleft)
 
             if isinstance(player, AIClient):

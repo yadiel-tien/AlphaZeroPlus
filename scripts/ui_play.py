@@ -1,7 +1,6 @@
 import sys
 
 
-sys.path.append('/Users/flashlight/PycharmProjects/FiveInARow/')
 from utils.types import EnvName
 import pygame
 
@@ -11,7 +10,7 @@ from utils.config import settings
 from player.human import Human
 from player.ai_client import AIClient
 
-game_name: EnvName = 'Gomoku'
+game_name: EnvName = 'ChineseChess'
 
 
 class Game:
@@ -19,7 +18,7 @@ class Game:
         pygame.init()
         self.screen = pygame.display.set_mode(settings['screen_size'])
         pygame.display.set_caption(game_name)
-        self.players = [Human(game_name), AIClient(220, game_name)]
+        self.players = [Human(game_name), AIClient(50, game_name)]
         if game_name == 'Gomoku':
             self.board = GomokuUI(self.players)
         else:
