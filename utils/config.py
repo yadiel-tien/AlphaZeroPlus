@@ -27,6 +27,7 @@ class GameConfig(TypedDict):
     img_path: str
     state_shape: tuple[int, ...]
     tao_switch_steps: int
+    augment_times: int
 
 
 class AppConfig(TypedDict):
@@ -46,6 +47,7 @@ class AppConfig(TypedDict):
     best_index_name: str
     ema_name: str
     rates_dir: str
+    training_steps_per_sample:int
 
 
 CONFIG: AppConfig = {
@@ -67,7 +69,8 @@ CONFIG: AppConfig = {
         'n_channels': 20,
         'n_actions': 2086,
         'img_path': './graphics/chess/board.jpeg',
-        'tao_switch_steps': 20
+        'tao_switch_steps': 20,
+        'augment_times': 3
     },
     'Gomoku': {
         'screen_size': (600, 800),
@@ -79,13 +82,14 @@ CONFIG: AppConfig = {
         'n_channels': 2,
         'n_actions': 15 * 15,
         'img_path': './graphics/gomoku/board.jpeg',
-        'tao_switch_steps': 10
+        'tao_switch_steps': 5,
+        'augment_times': 16
     },
     'data_dir': './data/',
     'dirichlet': 0.2,
     'base_url': 'http://192.168.0.126:5000/',
     'device': 'cuda:0',
-    'game_name': 'Gomoku',
+    'game_name': 'ChineseChess',
     'socket_path_prefix': './inference/socks/',
     'hub_socket_path': './inference/socks/hub.sock',
     'train_socket_path': cwd + '/inference/socks/train.sock',
@@ -94,6 +98,7 @@ CONFIG: AppConfig = {
     'best_index_name': 'best_index.pkl',
     'ema_name': 'ema.pkl',
     'rates_dir': './rates/',
+    'training_steps_per_sample':5
 }
 game_name = CONFIG['game_name']
 settings = CONFIG[game_name]

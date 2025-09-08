@@ -11,7 +11,7 @@ from utils.replay import NumpyBuffer
 from utils.types import EnvName
 from .infer_server import InferServer
 from .functions import recv, get_model_path
-from utils.config import CONFIG
+from utils.config import CONFIG, settings
 from utils.logger import get_logger
 from .request import SocketRequest
 
@@ -57,7 +57,7 @@ class TrainServer(InferServer):
                     self.request_queue.put(SocketRequest(cast(NDArray, data), client_sock))
                 elif isinstance(data, dict) and 'command' in data:
                     if data['command'] == 'fit':  # 训练模型
-                        self.fit(n_exp=data['n_exp'], iteration=data['iteration'])
+                        self.fit(n_collected_samples=data['n_exp'], iteration=data['iteration'])
                     elif data['command'] == 'shutdown':  # 关闭整个train server
                         self.shutdown()
                     else:
@@ -80,13 +80,13 @@ class TrainServer(InferServer):
     def socket_name(self) -> str:
         return self._server_sock.getsockname()
 
-    def fit(self, n_exp: int, iteration: int) -> None:
+    def fit(self, n_collected_samples: int, iteration: int) -> None:
         """从buffer中获取数据，训练神经网络"""
 
         start = time.time()
         # 加载最新buffer
         self.buffer.load()
-        epochs = n_exp * 20 // self.buffer.batch_size
+        epochs = n_collected_samples * settings['augment_times'] * CONFIG['training_steps_per_sample'] // self.buffer.batch_size
         for epoch in range(epochs):
             # 批量数据获取
             states, pis, zs = self.buffer.get_batch()

@@ -144,7 +144,7 @@ class Net(nn.Module):
         return self.policy(x), self.value(x)
 
     @classmethod
-    def make_model(cls, model_idx: int, env_name: EnvName, with_se: bool = True) -> tuple[Self, int]:
+    def make_model(cls, model_idx: int, env_name: EnvName, with_se: bool = False) -> tuple[Self, int]:
         """根据idx获取模型和idx，如果idx不存在，返回初始模型和-1"""
         settings = CONFIG[env_name]
         model = cls(settings['n_filter'], settings['n_cells'], settings['n_res_blocks'],

@@ -125,6 +125,9 @@ class NeuronNode:
 
         # 转换为适合神经网络的表示
         state = self.env.convert_to_network(self.state, self.player_to_move)
+        new_state = state[:,:,[1,0]]
+        new_state[5,5,1]=1
+        new_state[5,6,0]=1
         # 发送到推理进程推理，获取policy和value
         policy, value = send_request(sock, state, cast(EnvName, self.env.__name__), infer_queue, is_self_play)
         # 记录胜率

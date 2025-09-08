@@ -74,11 +74,6 @@ class Gomoku(BaseEnv):
         self.player_to_move = 1 - self.player_to_move
         self.last_action = action
 
-        # 胜利奖励1，平局或未结束奖励0，隐含失败后对手奖励1，通过min-max自己奖励-1
-        reward = 0.0
-        if self.winner == 1 - self.player_to_move:  # 落子导致胜利
-            reward = 1.0
-
         return self.state, reward, terminated, self.truncated, {}
 
     @classmethod
@@ -182,13 +177,13 @@ class Gomoku(BaseEnv):
         return reverse_board_policy(policy, symmetry_idx, cls.shape)
 
     @classmethod
-    def augment_data(self, data: tuple[NDArray, NDArray, float]) -> list[tuple[NDArray, NDArray, float]]:
+    def augment_data(cls, data: tuple[NDArray, NDArray, float]) -> list[tuple[NDArray, NDArray, float]]:
         """通过旋转和翻转棋盘进行数据增强
             - ChineseChess 支持水平翻转
-            - Gomoku 支持8种增强
+            - Gomoku 支持16种增强
         :param data: (state,pi,q)
-         :return 增强后的列别[(state,pi,q)]"""
-        state, pi, q = data
+         :return 增强后的列别[(state,pi,v)]"""
+        state, pi, v = data
         augmented_samples = []
         if state.shape[0] == state.shape[1]:
             indices = range(8)
@@ -197,5 +192,8 @@ class Gomoku(BaseEnv):
         for i in indices:
             transformed_state = apply_symmetry(state.copy(), i)
             transformed_prob = mirror_board_policy(pi.copy(), i, state.shape)
-            augmented_samples.append((transformed_state, transformed_prob, q))
+            augmented_samples.append((transformed_state, transformed_prob, v))
+            # 互换角色
+            augmented_samples.append((transformed_state[:,:,[1,0]], transformed_prob, -v))
+
         return augmented_samples

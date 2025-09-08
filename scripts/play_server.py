@@ -15,7 +15,7 @@ from flask import Flask, request, jsonify
 from player.ai_server import AIServer
 
 app = Flask(__name__)
-AIes: dict[str, AIServer] = {}
+ai_players: dict[str, AIServer] = {}
 clients_live_time: dict[str, float] = {}
 lock = threading.Lock()
 
@@ -44,7 +44,7 @@ def setup(data: Any) -> Any:
         pid = str(uuid.uuid4())
         with lock:
             clients_live_time[pid] = time.time()
-            AIes[pid] = AIServer(env_name, model_id, 2000)
+            ai_players[pid] = AIServer(env_name, model_id, 2000)
         return jsonify({"status": "success", 'pid': pid})
     except Exception as e:
         print(f'Failed to setup AI: {e}')
@@ -57,11 +57,11 @@ def make_move(data: Any) -> Any:
     try:
         pid = data['pid']
         with lock:
-            if pid not in AIes:
+            if pid not in ai_players:
                 return jsonify({"error": "Player has not been setup properly!"}), 400
 
             clients_live_time[pid] = time.time()
-            player = AIes[pid]
+            player = ai_players[pid]
 
         state = np.array(data['array'], dtype=np.float32)
         last_action = data['action']
@@ -80,11 +80,11 @@ def reset(data: Any) -> Any:
     try:
         pid = data['pid']
         with lock:
-            if pid not in AIes:
+            if pid not in ai_players:
                 return jsonify({"error": "Player has not been setup properly!"}), 400
 
             clients_live_time[pid] = time.time()
-            player = AIes[pid]
+            player = ai_players[pid]
 
         player.reset()
         return jsonify({"status": 'success'})
@@ -98,11 +98,11 @@ def heartbeat(data: Any) -> Any:
     try:
         pid = data['pid']
         with lock:
-            if pid not in AIes:
+            if pid not in ai_players:
                 return jsonify({"error": "Player has not been setup properly!"}), 400
 
             clients_live_time[pid] = time.time()
-            player = AIes[pid]
+            player = ai_players[pid]
 
         return jsonify({"status": 'success','win_rate':float( player.win_rate)})
     except Exception as e:
@@ -121,7 +121,7 @@ def cleanup_dead_clients(timeout=60):
 
             for pid in to_delete:
                 clients_live_time.pop(pid)
-                player = AIes.pop(pid)
+                player = ai_players.pop(pid)
                 player.shutdown()  # 清理player中的mcts
 
         time.sleep(timeout)

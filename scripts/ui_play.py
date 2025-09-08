@@ -11,7 +11,7 @@ from utils.config import settings
 from player.human import Human
 from player.ai_client import AIClient
 
-game_name: EnvName = 'ChineseChess'
+game_name: EnvName = 'Gomoku'
 
 
 class Game:
@@ -19,7 +19,7 @@ class Game:
         pygame.init()
         self.screen = pygame.display.set_mode(settings['screen_size'])
         pygame.display.set_caption(game_name)
-        self.players = [Human(game_name), AIClient(878, game_name)]
+        self.players = [Human(game_name), AIClient(220, game_name)]
         if game_name == 'Gomoku':
             self.board = GomokuUI(self.players)
         else:
