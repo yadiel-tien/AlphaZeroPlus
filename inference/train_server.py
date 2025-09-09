@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import cast
 import time
 import torch
@@ -5,12 +6,14 @@ from numpy.typing import NDArray
 
 import socket
 import numpy as np
+from torch.utils.tensorboard import SummaryWriter
 
+from network.functions import read_latest_index
 from network.network import Net
 from utils.replay import NumpyBuffer
 from utils.types import EnvName
 from .infer_server import InferServer
-from .functions import recv, get_model_path
+from .functions import recv, get_checkpoint_path
 from utils.config import CONFIG, settings
 from utils.logger import get_logger
 from .request import SocketRequest
@@ -20,10 +23,44 @@ class TrainServer(InferServer):
     def __init__(self, model_id: int, env_name: EnvName, max_listen_workers: int = 100):
         super().__init__(model_id, env_name, max_listen_workers)
         self.logger = get_logger('fit')
-        self.fit_model, _ = Net.make_model(self.model_index, env_name)
-        self.fit_model.to(CONFIG['device'])
+        # 模型
+        self.fit_model = Net.make_raw_model(env_name, eval_model=False)
+        # 优化器和学习率调解器
         self.optimizer = torch.optim.Adam(self.fit_model.parameters(), lr=1e-3, weight_decay=1e-4)
+        self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer=self.optimizer, T_max=1000, eta_min=1e-5)
+        # 训练步数计数器
+        self.total_steps_trained = 0
+        # buffer
         self.buffer = NumpyBuffer(500_000, 2048)
+        # 加载最新存档
+        self.load_checkpoint(read_latest_index(self.env_name))
+        # 可视化记录
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.writer = SummaryWriter(log_dir=f'runs/{self.env_name}_{timestamp}')
+
+    def load_checkpoint(self, iteration: int) -> None:
+        """读取并加载存档"""
+        path = get_checkpoint_path(self.env_name, iteration)
+        checkpoint = torch.load(path, map_location=CONFIG['device'])
+        self.fit_model.load_state_dict(checkpoint['model'])
+        self.optimizer.load_state_dict(checkpoint['optimizer'])
+        self.scheduler.load_state_dict(checkpoint['scheduler'])
+        self.total_steps_trained = checkpoint['total_steps_trained']
+        self.logger.info(f'Load checkpoint successfully. Current step: {self.total_steps_trained}.')
+
+    def save_checkpoint(self, iteration: int) -> None:
+        """保存存档"""
+        # 创建checkpoint
+        checkpoint = {
+            'total_steps_trained': self.total_steps_trained,
+            'model': self.fit_model.state_dict(),
+            'optimizer': self.optimizer.state_dict(),
+            'scheduler': self.scheduler.state_dict(),
+        }
+
+        # 保存新模型参数
+        path = get_checkpoint_path(self.env_name, iteration)
+        torch.save(checkpoint, path)
 
     @property
     def socket_path(self) -> str:
@@ -70,12 +107,6 @@ class TrainServer(InferServer):
                 break
         client_sock.close()
 
-    def update_from_index(self, index: int):
-        """根据编号index，读取存储的模型，直接修改eval_model指针，避免多线程数据冲突"""
-        model, self.model_index = Net.make_model(index, self.env_name)
-        model.to(CONFIG['device']).eval()
-        self.eval_model = model
-
     @property
     def socket_name(self) -> str:
         return self._server_sock.getsockname()
@@ -86,8 +117,9 @@ class TrainServer(InferServer):
         start = time.time()
         # 加载最新buffer
         self.buffer.load()
-        epochs = n_collected_samples * settings['augment_times'] * CONFIG['training_steps_per_sample'] // self.buffer.batch_size
-        for epoch in range(epochs):
+        n_training_steps = n_collected_samples * settings['augment_times'] * CONFIG[
+            'training_steps_per_sample'] // self.buffer.batch_size
+        for step in range(n_training_steps):
             # 批量数据获取
             states, pis, zs = self.buffer.get_batch()
             states = torch.from_numpy(states).float().to(CONFIG['device'])
@@ -116,30 +148,33 @@ class TrainServer(InferServer):
             loss = policy_loss + value_loss
             self.optimizer.zero_grad()  # 清空旧梯度
             loss.backward()  # 反向传播
-            # 这些用于检查value的参数情况，判断有没有出现梯度消失
-            # for name, param in self.fit_model.value.named_parameters():
-            #     if param.grad is not None:
-            #         print(f"{name}: {param.grad.mean()}", end=', ')
-            #     else:
-            #         print(f"{name}:None", end=', ')
-            # print()
+
             torch.nn.utils.clip_grad_norm_(self.fit_model.parameters(), max_norm=1.0)  # 将梯度范数裁剪到1.0
             self.optimizer.step()  # 更新参数
 
+            # 记录数据到tensorboard
+            self.writer.add_scalar('Loss/total', loss.item(), self.total_steps_trained)
+            self.writer.add_scalar('Loss/policy', policy_loss.item(), self.total_steps_trained)
+            self.writer.add_scalar('Loss/value', value_loss.item(), self.total_steps_trained)
+
+            # 更新计步器
+            self.total_steps_trained += 1
+
             self.logger.info(
-                f"Epoch {epoch + 1}:\n "
-                # f'w_policy={w_policy:.4f}, w_value={w_value:.4f}'
+                f"Step {step + 1}:\n "
                 f" loss={loss.item():.4f}, policy_loss={policy_loss.item():.4f}, value_loss={value_loss.item():.4f}"
             )
-        # 保存新模型参数
-        model_path = get_model_path(self.env_name, iteration)
-        torch.save(self.fit_model.state_dict(), model_path)
+
+        # 更新学习率调解器
+        self.scheduler.step()
+        self.writer.add_scalar('Learning Rate', self.scheduler.get_lr()[0], self.total_steps_trained)
+        # 保存存档
+        self.save_checkpoint(iteration)
         # 更新推理模型
         with self.model_lock:
             self.eval_model.load_state_dict(self.fit_model.state_dict())
-        self.model_index = iteration
         duration = time.time() - start
-        self.logger.info(f"iteration{iteration}:{epochs}轮训练完成，共用时{duration:.2f}秒。")
+        self.logger.info(f"iteration{iteration}:{n_training_steps}轮训练完成，共用时{duration:.2f}秒。")
 
     def shutdown(self) -> None:
         super().shutdown()

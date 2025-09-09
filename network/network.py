@@ -4,7 +4,7 @@ from typing import Self
 import torch
 from torch import Tensor, nn
 
-from inference.functions import get_model_path
+from inference.functions import get_model_path, get_checkpoint_path
 from utils.config import CONFIG
 from utils.types import EnvName
 
@@ -54,7 +54,7 @@ class ResBlock(nn.Module):
         self.relu1 = nn.ReLU()
         self.conv2 = nn.Conv2d(n_filters, n_filters, kernel_size=3, stride=1, padding=1)
         self.bn2 = nn.BatchNorm2d(n_filters)
-        # 可选seblock
+        # 可选SEBlock
         self.with_se = with_se
         if with_se:
             self.se = SEBlock(n_filters)
@@ -144,17 +144,32 @@ class Net(nn.Module):
         return self.policy(x), self.value(x)
 
     @classmethod
-    def make_model(cls, model_idx: int, env_name: EnvName, with_se: bool = False) -> tuple[Self, int]:
-        """根据idx获取模型和idx，如果idx不存在，返回初始模型和-1"""
+    def make_raw_model(cls, env_name: EnvName, eval_model: bool, with_se: bool = False) -> Self:
+        """工厂方法创建初始模型"""
         settings = CONFIG[env_name]
         model = cls(settings['n_filter'], settings['n_cells'], settings['n_res_blocks'],
                     settings['n_channels'], settings['n_actions'], with_se).to(CONFIG['device'])
+        if eval_model:
+            model.eval()
+            print('Raw model created in eval mode.')
+        else:
+            print('Raw model created in training mode.')
+        return model
+
+    def load_from_index(self, model_idx: int, env_name: EnvName) -> bool:
+        """尝试通过id加载模型，返回加载结果"""
+        # 先尝试从模型加载
         model_path = get_model_path(env_name, model_idx)
         if os.path.exists(model_path):
-            model.load_state_dict(
+            self.load_state_dict(
                 torch.load(model_path, map_location=CONFIG['device']))
-            print(f'model {model_idx} loaded successfully')
-        else:
-            model_idx = -1
-            print('model not found, initializing from scratch')
-        return model, model_idx
+            print(f'Model {model_idx} loaded successfully from {model_path}.')
+            return True
+        # 尝试从存档加载
+        checkpoint_path = get_checkpoint_path(env_name, model_idx)
+        if os.path.exists(checkpoint_path):
+            checkpoint = torch.load(checkpoint_path, map_location=CONFIG['device'])
+            self.load_state_dict(checkpoint['model'])
+            print(f'Model {model_idx} loaded successfully from {checkpoint_path}.')
+            return True
+        return False

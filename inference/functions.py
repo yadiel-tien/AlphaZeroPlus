@@ -55,6 +55,9 @@ def get_model_path(env_name: str, model_id: int) -> str:
     """根据env_name和model_id生成model的存储路径"""
     return os.path.join(CONFIG['data_dir'], env_name, f'model_{model_id}.pt')
 
+def get_checkpoint_path(env_name: str, iteration: int) -> str:
+    """根据env_name和iteration生成checkpoint的存储路径"""
+    return os.path.join(CONFIG['data_dir'], env_name, f'checkpoint_{iteration}.pt')
 
 def parse_socket_path(socket_path: str) -> tuple[EnvName, int]:
     """根据socket path解析出env和id"""

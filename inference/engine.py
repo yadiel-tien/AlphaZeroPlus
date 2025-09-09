@@ -16,8 +16,9 @@ from network.network import Net
 class InferenceEngine:
     def __init__(self, model_index: int, env_name: EnvName):
         # 推理model
-        self.eval_model, self.model_index = Net.make_model(model_index, env_name)
-        self.eval_model.to(CONFIG['device']).eval()
+        self.eval_model = Net.make_raw_model(env_name, eval_model=True)
+        if not self.eval_model.load_from_index(model_index, env_name):
+            model_index = -1
         self.env_name = env_name
         self.name = get_model_name(env_name, model_index)
         # 负责单个request的发送接收
