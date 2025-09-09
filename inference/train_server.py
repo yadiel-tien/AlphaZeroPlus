@@ -183,4 +183,6 @@ class TrainServer(InferServer):
         self.logger.info(f"iteration{iteration}:{n_training_steps}轮训练完成，共用时{duration:.2f}秒。")
 
     def shutdown(self) -> None:
+        if self.writer:
+            self.writer.close()
         super().shutdown()
