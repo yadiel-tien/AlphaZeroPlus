@@ -28,6 +28,7 @@ class GameConfig(TypedDict):
     state_shape: tuple[int, ...]
     tao_switch_steps: int
     augment_times: int
+    max_iters:int
 
 
 class AppConfig(TypedDict):
@@ -69,8 +70,9 @@ CONFIG: AppConfig = {
         'n_channels': 20,
         'n_actions': 2086,
         'img_path': './graphics/chess/board.jpeg',
-        'tao_switch_steps': 20,
-        'augment_times': 3
+        'tao_switch_steps': 30,
+        'augment_times': 3,
+        'max_iters':1000
     },
     'Gomoku': {
         'screen_size': (600, 800),
@@ -83,7 +85,8 @@ CONFIG: AppConfig = {
         'n_actions': 15 * 15,
         'img_path': './graphics/gomoku/board.jpeg',
         'tao_switch_steps': 5,
-        'augment_times': 16
+        'augment_times': 16,
+        'max_iters':300
     },
     'data_dir': './data/',
     'dirichlet': 0.2,

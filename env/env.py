@@ -70,7 +70,7 @@ class BaseEnv(gym.Env, ABC):
         index = 0
         while True:
             if not silent:
-                print(f'-----player{index + 1}-----')
+                print(f'-----player{index + 1} {players[index].description}-----')
             action = players[index].get_action(self.state, self.last_action, self.player_to_move)
             _, reward, terminated, truncated, _ = self.step(action)
             self.render()

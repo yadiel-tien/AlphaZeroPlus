@@ -28,7 +28,7 @@ class TrainServer(InferServer):
         self.fit_model = Net.make_raw_model(env_name, eval_model=False)
         # 优化器和学习率调解器
         self.optimizer = torch.optim.Adam(self.fit_model.parameters(), lr=1e-3, weight_decay=1e-4)
-        self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer=self.optimizer, T_max=1000, eta_min=1e-5)
+        self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer=self.optimizer, T_max=settings['max_iters'], eta_min=1e-5)
         # 训练步数计数器
         self.total_steps_trained = 0
         # buffer
@@ -48,7 +48,7 @@ class TrainServer(InferServer):
             self.optimizer.load_state_dict(checkpoint['optimizer'])
             self.scheduler.load_state_dict(checkpoint['scheduler'])
             self.total_steps_trained = checkpoint['total_steps_trained']
-            self.logger.info(f'Load checkpoint successfully. Current step: {self.total_steps_trained}.')
+            self.logger.info(f'Load checkpoint successfully. Iteration: {iteration}, Step: {self.total_steps_trained}.')
         else:
             self.logger.info(f'Checkpoint not found. Trying to load from model file...')
             if not self.fit_model.load_from_index(iteration, self.env_name):

@@ -16,33 +16,32 @@ import random
 class SelfPlayManager:
     def __init__(self, n_workers: int):
         self.logger = get_logger('selfplay')
-        self.latest_model_index = read_latest_index()
         self.n_workers = n_workers
         self.buffer = NumpyBuffer(500_000, 2048)
         self.buffer.load()
         self.env_class = get_class(game_name)
 
-    def run(self, iteration: int, n_games: int) -> None:
+    def run(self, n_games: int) -> None:
         """训练入口
-        :param iteration: 主循环，eval_model index以此产生
         :param n_games: 每轮的游戏数量"""
-        if self.latest_model_index == -1:
-            self.latest_model_index = 0
-        for i in range(iteration):
-            self.logger.info(
-                f'iteration {i + 1}/{iteration},latest: {self.latest_model_index}')
-            # self_play
-            self.logger.info(f'selfplay iteration {i + 1}/{iteration},latest: {self.latest_model_index}')
+        iteration = read_latest_index()
+        iteration = 1 if iteration == -1 else iteration + 1
+
+        while iteration < settings['max_iters']:
+            self.logger.info(f'Starting selfplay, iteration {iteration}')
+            # 先保证buffer足够大
             while self.buffer.size < self.buffer.capacity * 0.6:
-                self.self_play(iteration=self.latest_model_index, n_games=50)
+                self.self_play(iteration=iteration, n_games=50)
                 self.logger.info(f'Collecting data.Current buffer size: {self.buffer.size}.')
-            data_count = self.self_play(iteration=self.latest_model_index, n_games=n_games)
+
+            # 开始selfplay
+            data_count = self.self_play(iteration=iteration, n_games=n_games)
 
             # 训练网络，保存网络
-            self.latest_model_index += 1
+            iteration += 1
 
             # 服务端进行模型训练，并保存参数，升级infer model
-            require_fit(self.latest_model_index, data_count)
+            require_fit(iteration, data_count)
 
     def self_play(self, iteration: int, n_games=100) -> int:
         """自博弈收集数据
@@ -50,8 +49,11 @@ class SelfPlayManager:
         :param n_games: 每次自博弈进行的对局数量"""
 
         start = time.time()
+        # 动态n_simulation,最大到800
+        n_simulation = 200 + iteration * 600 // settings['max_iters']
+
         with  ThreadPoolExecutor(self.n_workers) as pool:
-            futures = [pool.submit(self.self_play_worker, iteration) for _ in range(n_games)]
+            futures = [pool.submit(self.self_play_worker, n_simulation) for _ in range(n_games)]
             data_count, win_count, lose_count, draw_count, truncate_count = 0, 0, 0, 0, 0
             for f in tqdm(as_completed(futures), total=n_games, desc='self playing'):
                 samples, winner = f.result()
@@ -68,7 +70,7 @@ class SelfPlayManager:
         # 总结
         duration = time.time() - start
         self.logger.info(
-            f'selfplay {n_games}局游戏，收集到原始数据{data_count}条,\n'
+            f'selfplay {n_games}局游戏，每步模拟{n_simulation}次，收集到原始数据{data_count}条,\n'
             f'win rate:{win_count / n_games:.2%},lose rate:{lose_count / n_games:.2%},'
             f'draw rate:{draw_count / n_games :.2%},truncate rate:{truncate_count / n_games :.2%}。')
         self.logger.info(
@@ -76,7 +78,7 @@ class SelfPlayManager:
         )
         return data_count
 
-    def self_play_worker(self, iteration: int) -> tuple[list[
+    def self_play_worker(self, n_simulation: int) -> tuple[list[
         tuple[NDArray, NDArray, float]], int]:
         """进行一局游戏，收集经验
         :return [(state,pi_move,q),...],winner.winner0,1代表获胜玩家，-1代表平局"""
@@ -91,10 +93,7 @@ class SelfPlayManager:
         steps = 0
         samples = []
         while not env.terminated and not env.truncated:
-
-            # 动态n_simulation
-            n_simulation = 200 + min(iteration / 200, 2) * 300
-            mcts.run(int(n_simulation))  # 模拟
+            mcts.run(n_simulation)  # 模拟
 
             pi_target = mcts.get_pi(1.0)
             temperature = 1.0 if steps < settings['tao_switch_steps'] else 0.2
