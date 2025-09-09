@@ -144,7 +144,7 @@ class Net(nn.Module):
         return self.policy(x), self.value(x)
 
     @classmethod
-    def make_raw_model(cls, env_name: EnvName, eval_model: bool, with_se: bool = False) -> Self:
+    def make_raw_model(cls, env_name: EnvName, eval_model: bool, with_se: bool = True) -> Self:
         """工厂方法创建初始模型"""
         settings = CONFIG[env_name]
         model = cls(settings['n_filter'], settings['n_cells'], settings['n_res_blocks'],

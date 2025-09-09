@@ -1,3 +1,4 @@
+import os
 from datetime import datetime
 from typing import cast
 import time
@@ -41,12 +42,17 @@ class TrainServer(InferServer):
     def load_checkpoint(self, iteration: int) -> None:
         """读取并加载存档"""
         path = get_checkpoint_path(self.env_name, iteration)
-        checkpoint = torch.load(path, map_location=CONFIG['device'])
-        self.fit_model.load_state_dict(checkpoint['model'])
-        self.optimizer.load_state_dict(checkpoint['optimizer'])
-        self.scheduler.load_state_dict(checkpoint['scheduler'])
-        self.total_steps_trained = checkpoint['total_steps_trained']
-        self.logger.info(f'Load checkpoint successfully. Current step: {self.total_steps_trained}.')
+        if os.path.exists(path):
+            checkpoint = torch.load(path, map_location=CONFIG['device'])
+            self.fit_model.load_state_dict(checkpoint['model'])
+            self.optimizer.load_state_dict(checkpoint['optimizer'])
+            self.scheduler.load_state_dict(checkpoint['scheduler'])
+            self.total_steps_trained = checkpoint['total_steps_trained']
+            self.logger.info(f'Load checkpoint successfully. Current step: {self.total_steps_trained}.')
+        else:
+            self.logger.info(f'Checkpoint not found. Trying to load from model file...')
+            if not self.fit_model.load_from_index(iteration, self.env_name):
+                self.logger.info(f'Loading failed.Starting from raw model.')
 
     def save_checkpoint(self, iteration: int) -> None:
         """保存存档"""
