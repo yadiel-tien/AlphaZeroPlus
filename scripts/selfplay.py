@@ -7,9 +7,13 @@ def main():
 
     register_sigint(manager.shutdown)
 
-    manager.run(n_games=200)
+    try:
+        manager.run(n_games=200)
+        manager.shutdown()
+    except ConnectionError or FileNotFoundError:
+        print("Server has been shut down,selfplay stopped!")
 
-    manager.shutdown()
+
 
 
 if __name__ == '__main__':

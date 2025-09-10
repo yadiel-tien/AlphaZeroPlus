@@ -1,6 +1,6 @@
 import os
 import threading
-from typing import cast
+from typing import cast, Sequence
 from numpy.typing import NDArray
 
 import socket
@@ -16,14 +16,14 @@ from .request import SocketRequest
 
 
 class InferServer(InferenceEngine):
-    def __init__(self, model_id: int, env_name: EnvName, max_listen_workers: int = 32):
+    def __init__(self, model_id: int, env_name: EnvName, max_listen_workers: int = 32, training=False):
         self.max_listen_workers = max_listen_workers
         self._listen_thread: threading.Thread | None = None
         self._listen_pool: ThreadPoolExecutor | None = None
         self._server_sock: socket.socket | None = None
         self.client_count = 0
-        self.lock = threading.Lock()
-        super().__init__(model_id, env_name)
+        self.connection_lock = threading.Lock()
+        super().__init__(model_id, env_name, training)
 
     def start(self) -> None:
         """启动推理线程和监听进程"""
@@ -60,7 +60,7 @@ class InferServer(InferenceEngine):
             try:
                 # accept会阻塞，无法检查running状态，设置超时继续
                 conn, _ = self._server_sock.accept()
-                with self.lock:
+                with self.connection_lock:
                     self.client_count += 1
                     print(f'New connection established, total {self.client_count} clients')
                 self._listen_pool.submit(self.handle_client, conn)
@@ -83,18 +83,20 @@ class InferServer(InferenceEngine):
             except socket.timeout:
                 continue
             except ConnectionError:
-                with self.lock:
+                with self.connection_lock:
                     self.client_count -= 1
                     if self.client_count == 0:
                         require_infer_removal(client_sock)
                 break
         client_sock.close()
 
-    def deliver_result(self, requests: list[SocketRequest], policies: NDArray[np.float32],
-                       values: NDArray[np.float32]) -> None:
+    def deliver_result(self, requests: list[SocketRequest], probs: Sequence[NDArray], values: Sequence[float]) -> None:
         """神经网络处理后的结果通过socket发回请求方"""
-        for r, p, v in zip(requests, policies, values):
+        for r, p, v in zip(requests, probs, values):
             send(r.sock, (p, v))
+
+    def deliver_one(self, request: SocketRequest, prob: NDArray, value: float) -> None:
+        send(request.sock, (prob, value))
 
     def shutdown(self) -> None:
         """清理资源"""

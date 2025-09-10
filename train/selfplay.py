@@ -37,11 +37,11 @@ class SelfPlayManager:
             # 开始selfplay
             data_count = self.self_play(iteration=iteration, n_games=n_games)
 
-            # 训练网络，保存网络
-            iteration += 1
-
             # 服务端进行模型训练，并保存参数，升级infer model
             require_fit(iteration, data_count)
+
+            # 训练网络，保存网络
+            iteration += 1
 
     def self_play(self, iteration: int, n_games=100) -> int:
         """自博弈收集数据
@@ -134,6 +134,11 @@ class SelfPlayManager:
             z = -1.0 if env.winner == 1 - p else 1.0 if env.winner == p else 0.0
             # q与z加权使用
             v = (z - q) / 2
+
+            # 交换红黑双方位置对应的概率分布
+            if p == 1 and self.env_class.__name__ == 'ChineseChess':
+                pi = env.restore_policy(pi, 5)
+
             samples[i] = state, pi, v
 
         return samples, env.winner

@@ -1,7 +1,7 @@
 from gymnasium import spaces
 from numpy.typing import NDArray
 from utils.config import CONFIG
-from utils.mirror import mirror_action_policy, switch_side_ip, apply_symmetry
+from utils.mirror import mirror_action_policy, apply_symmetry
 from utils.types import ChessMove, GameResult, PieceMoveFunc
 
 import numpy as np
@@ -136,7 +136,7 @@ class ChineseChess(BaseEnv):
     def convert_to_network(cls, state: NDArray, current_player: int) -> NDArray:
         """
         将 10x9x6 的 array 编码为 10x9x20 的 one-hot 张量供神经网络使用。
-
+        当前玩家始终在0-6层，并且位于棋盘同一侧
         输出 arr 的含义：
         - [0~13]：当前棋盘上的棋子类型（0~13），0-6当前玩家，7-13对手
         - [14~18]：最近 5 步之间的棋盘是否保持不变
@@ -162,7 +162,8 @@ class ChineseChess(BaseEnv):
             arr[:, :, 13 + i] = np.equal(state[:, :, i - 1], state[:, :, i]).astype(np.float32)
         # 编码未吃子步数，超过100判和
         arr[:, :, -1] = state[:, :, -1].astype(np.float32) / 100.0
-        return arr
+
+        return arr if current_player == 0 else np.flipud(arr)
 
     @classmethod
     def get_valid_actions(cls, state: NDArray, player_to_move: int) -> NDArray[np.int_]:
@@ -581,13 +582,10 @@ class ChineseChess(BaseEnv):
         :param data: (state,pi,q)
          :return 增强后的列别[(state,pi,q)]"""
         state, pi, q = data
-        augmented_samples = []
-        indices = (0, 4, 5)
+        augmented_samples = [data]
+        indices = (4, 5)
         for i in indices:
-            if i == 5:
-                transformed_state = switch_side_ip(state.copy())
-            else:
-                transformed_state = apply_symmetry(state.copy(), i)
+            transformed_state = apply_symmetry(state, i)
             transformed_prob = mirror_action_policy(pi, i, cls.mirror_lr_actions,
                                                     cls.mirror_ud_actions)
             augmented_samples.append((transformed_state, transformed_prob, q))

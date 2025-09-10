@@ -20,14 +20,11 @@ def random_mirror_state_ip(state: NDArray, env_name: str) -> tuple[NDArray, int]
     返回：
         变换后的 ndarray"""
     if env_name == 'ChineseChess':
-        random_num = random.randint(0, 2)
-        if random_num == 0:
-            return state, 0
-
-        if random_num == 1:
+        # 象棋只支持上下左右翻转
+        if random.random() < 0.5 :
             return apply_symmetry(state, 4), 4
 
-        return switch_side_ip(state), 5
+        return state, 0
 
     if env_name == 'Gomoku':
         shape = state.shape
@@ -41,16 +38,9 @@ def random_mirror_state_ip(state: NDArray, env_name: str) -> tuple[NDArray, int]
     raise ValueError('Unknown game environment')
 
 
-def switch_side_ip(state: NDArray) -> NDArray:
-    """象棋的黑红双方位置交换"""
-    temp = state[:, :, :14].copy()
-    for r in range(10):
-        state[r, :, :14] = temp[9 - r, :, :14]
-    return state
-
-
 def apply_symmetry(array: NDArray, idx: int) -> NDArray:
-    """  :param array: 二维ndarray
+    """ 都是返回副本
+     :param array: 二维ndarray
         :param idx: 对称操作索引（0~7）：
        - 0: 原样
        - 1~3: 顺时针旋转 90°/180°/270°
@@ -65,7 +55,9 @@ def apply_symmetry(array: NDArray, idx: int) -> NDArray:
     else:
         raise ValueError('array must be 2D or 3D')
 
-    if idx < 4:  # 旋转 0°, 90°, 180°, 270°
+    if idx == 0:
+        return array.copy()
+    elif idx < 4:  # 旋转 0°, 90°, 180°, 270°
         return np.rot90(array, k=idx)
     elif idx == 4:  # 水平翻转
         return np.fliplr(array)

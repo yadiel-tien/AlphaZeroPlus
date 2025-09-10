@@ -1,6 +1,8 @@
 import queue
 import threading
 import time
+from collections import OrderedDict
+from typing import Sequence
 
 import numpy as np
 import torch
@@ -14,7 +16,7 @@ from network.network import Net
 
 
 class InferenceEngine:
-    def __init__(self, model_index: int, env_name: EnvName):
+    def __init__(self, model_index: int, env_name: EnvName, training: bool = False):
         # 推理model
         self.eval_model = Net.make_raw_model(env_name, eval_model=True)
         if not self.eval_model.load_from_index(model_index, env_name):
@@ -29,6 +31,14 @@ class InferenceEngine:
         self._infer_thread: threading.Thread | None = None
         self.running = False
         self.model_lock = threading.Lock()
+        self.training = training
+        if self.training:
+            # 置换表
+            self.transposition_table = OrderedDict()
+            self.tt_lock = threading.Lock()
+            self.tt_max_size = 3_000_000
+            self.hit = 0
+            self.total_request = 0
 
     def start(self) -> None:
         """启动推理线程"""
@@ -54,6 +64,19 @@ class InferenceEngine:
                 # 思路参考tcp拥塞控制
                 try:
                     request = self.request_queue.get(timeout=delay)
+                    if self.training:
+                        # 检查缓存
+                        with self.tt_lock:
+                            self.total_request += 1
+                            key = request.state[:, :, :14].astype(np.int8).tobytes()
+                            if key in self.transposition_table:  # 命中
+                                policy, value = self.transposition_table[key]
+                                self.deliver_one(request, policy, value)
+                                # LRU
+                                self.transposition_table.move_to_end(key)
+                                self.hit += 1
+                                continue
+
                     requests.append(request)
                     if phase == 'ramp up':
                         if batch_size < threshold:
@@ -66,6 +89,7 @@ class InferenceEngine:
 
                     if len(requests) >= min(batch_size, max_size):
                         break
+
                 except queue.Empty:
                     threshold = max(1, batch_size // 2)
                     batch_size = threshold
@@ -95,19 +119,34 @@ class InferenceEngine:
                         logits, values = self.eval_model(batch_tensor)
             probs = torch.nn.functional.softmax(logits.float(), dim=-1).cpu().numpy()
             values = values.float().cpu().numpy()
-
             self.deliver_result(requests, probs, values)
-            print(
-                f'{len(requests):>2} requests inference took {time.time() - start:.10f} seconds.Pending:{self.infer_queue.qsize():2}.',
-                end='\r')
+            msg = f'{len(requests):>2} requests inference took {time.time() - start:.10f} seconds.Pending:{self.infer_queue.qsize():2}.'
 
-    def deliver_result(self, requests: list[QueueRequest], probs: NDArray[np.float32],
-                       values: NDArray[np.float32]) -> None:
+            if self.training:
+                # 更新缓存
+                with self.tt_lock:
+                    for request, prob, value in zip(requests, probs, values):
+                        key = request.state[:, :, :14].astype(np.int8).tobytes()
+                        self.transposition_table[key] = (prob, value)
+                    # LRU清理旧缓存
+                    while len(self.transposition_table) > self.tt_max_size:
+                        self.transposition_table.popitem(last=False)
+
+                    msg += f' hit rate: {self.hit / (self.total_request + 1) :.2%}, total:{self.total_request}.'
+
+            print(msg, end='\r')
+
+    def deliver_result(self, requests: list[QueueRequest], probs: Sequence[NDArray], values: Sequence[float]) -> None:
         # 结果交给请求方，通知request继续
         for r, p, v in zip(requests, probs, values):
             r.policy = p
             r.value = v
             r.event.set()
+
+    def deliver_one(self, request: QueueRequest, prob: NDArray, value: float) -> None:
+        request.policy = prob
+        request.value = value
+        request.event.set()
 
     def shutdown(self) -> None:
         """清理资源，关闭推理线程"""

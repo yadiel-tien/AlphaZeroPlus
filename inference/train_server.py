@@ -14,7 +14,7 @@ from network.network import Net
 from utils.replay import NumpyBuffer
 from utils.types import EnvName
 from .infer_server import InferServer
-from .functions import recv, get_checkpoint_path
+from .functions import recv, get_checkpoint_path, send
 from utils.config import CONFIG, settings
 from utils.logger import get_logger
 from .request import SocketRequest
@@ -22,13 +22,14 @@ from .request import SocketRequest
 
 class TrainServer(InferServer):
     def __init__(self, model_id: int, env_name: EnvName, max_listen_workers: int = 100):
-        super().__init__(model_id, env_name, max_listen_workers)
+        super().__init__(model_id, env_name, max_listen_workers, training=True)
         self.logger = get_logger('fit')
         # 模型
         self.fit_model = Net.make_raw_model(env_name, eval_model=False)
         # 优化器和学习率调解器
         self.optimizer = torch.optim.Adam(self.fit_model.parameters(), lr=1e-3, weight_decay=1e-4)
-        self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer=self.optimizer, T_max=settings['max_iters'], eta_min=1e-5)
+        self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer=self.optimizer,
+                                                                    T_max=settings['max_iters'], eta_min=1e-5)
         # 训练步数计数器
         self.total_steps_trained = 0
         # buffer
@@ -170,10 +171,14 @@ class TrainServer(InferServer):
                 f"Step {step + 1}:\n "
                 f" loss={loss.item():.4f}, policy_loss={policy_loss.item():.4f}, value_loss={value_loss.item():.4f}"
             )
-
+        # 清空缓存
+        with self.tt_lock:
+            # self.transposition_table.clear()
+            self.total_request = 0
+            self.hit = 0
         # 更新学习率调解器
+        self.writer.add_scalar('Learning Rate', self.scheduler.get_last_lr()[0], self.total_steps_trained)
         self.scheduler.step()
-        self.writer.add_scalar('Learning Rate', self.scheduler.get_lr()[0], self.total_steps_trained)
         # 保存存档
         self.save_checkpoint(iteration)
         # 更新推理模型

@@ -1,6 +1,7 @@
 import collections
 import queue
 import socket
+import threading
 import time
 from typing import Self, cast
 
@@ -122,14 +123,14 @@ class NeuronNode:
         if self.leaf_reward != GameResult.ONGOING:
             self.win_rate = (self.leaf_reward + 1) / 2
             return float(self.leaf_reward)
-
         # 转换为适合神经网络的表示
         state = self.env.convert_to_network(self.state, self.player_to_move)
-        new_state = state[:,:,[1,0]]
-        new_state[5,5,1]=1
-        new_state[5,6,0]=1
         # 发送到推理进程推理，获取policy和value
         policy, value = send_request(sock, state, cast(EnvName, self.env.__name__), infer_queue, is_self_play)
+        # 象棋采用了红黑交换，需要对应反转概率
+        if self.player_to_move == 1 and self.env.__class__ == "ChineseChess":
+            policy = self.env.restore_policy(policy, 5)
+
         # 记录胜率
         self.win_rate = (-value + 1) / 2
         # 概率归一化

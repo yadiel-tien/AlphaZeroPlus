@@ -73,15 +73,16 @@ def send_request(
     return send_via_queue(state, env_name, infer_queue, is_self_play)
 
 
-def send_via_socket(sock: socket.socket, state: NDArray, env_name: EnvName, is_self_play=False) -> tuple[NDArray, float]:
+def send_via_socket(sock: socket.socket, state: NDArray, env_name: EnvName, is_self_play=False) -> tuple[
+    NDArray, float]:
     """传入state，输出policy和value。is_self_play=True时对数据随机进行对称变换。
     适用于不同进程间进行请求和推理。设计用来3.14多线程selfplay发送请求到3.13推理进程"""
     state, symmetric_idx = preprocess_state(state, env_name, is_self_play)
 
     # 通过socket发送请求，再通过socket接收结果回传
-
     send(sock, state)
     policy, value = recv(sock)
+    # 还原
     policy = postprocess_policy(policy, symmetric_idx, env_name)
     return policy, value
 
