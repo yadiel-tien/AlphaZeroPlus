@@ -356,8 +356,8 @@ class ChineseChess(BaseEnv):
         raise RuntimeError("handle_human_input should never reach here")
 
     @classmethod
-    def describe_move(cls, state: NDArray, action: int) -> None:
-        r, c, tr, tc = cls._action2move[action]
+    def describe_move(cls, state: NDArray, action_to_move: int) -> None:
+        r, c, tr, tc = cls._action2move[action_to_move]
         big_char = ['一', '二', '三', '四', '五', '六', '七', '八', '九']
         red_col = big_char[::-1]
         black_col = list(range(1, 10))

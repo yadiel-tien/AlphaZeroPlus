@@ -33,8 +33,8 @@ class BaseEnv(gym.Env, ABC):
 
     @classmethod
     @abstractmethod
-    def describe_move(cls, state: NDArray, action: int) -> None:
-        """用于无UI界面，在控制台描述所走棋步"""
+    def describe_move(cls, state: NDArray, action_to_move: int) -> None:
+        """用于无UI界面，在控制台描述所走棋步.需要输入走棋之前的state和action"""
         ...
 
     @classmethod

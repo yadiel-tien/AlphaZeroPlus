@@ -128,7 +128,7 @@ class NeuronNode:
         # 发送到推理进程推理，获取policy和value
         policy, value = send_request(sock, state, cast(EnvName, self.env.__name__), infer_queue, is_self_play)
         # 象棋采用了红黑交换，需要对应反转概率
-        if self.player_to_move == 1 and self.env.__class__ == "ChineseChess":
+        if self.player_to_move == 1 and self.env == ChineseChess:
             policy = ChineseChess.switch_side_policy(policy)
 
         # 记录胜率

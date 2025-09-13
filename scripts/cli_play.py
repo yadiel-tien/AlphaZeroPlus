@@ -9,5 +9,6 @@ if __name__ == "__main__":
     env = get_class(game_name)()
     with AIServer(game_name, latest_model, n_simulation=1000) as ai, AIServer(game_name, latest_model // 2,
                                                                               n_simulation=1000) as ai2:
-        result = env.run((Human(game_name),ai))
+        result = env.run((ai2, ai))
+        # result = env.run((Human(game_name),ai))
     env.render()

@@ -101,9 +101,9 @@ class Gomoku(BaseEnv):
         return divmod(int(action), cls.shape[1])
 
     @classmethod
-    def describe_move(cls, state: NDArray, action: int) -> None:
+    def describe_move(cls, state: NDArray, action_to_move: int) -> None:
         """无UI对弈时，打印描述行棋的说明"""
-        row, col = cls.action2move(action)
+        row, col = cls.action2move(action_to_move)
         print(f'选择落子：({row + 1},{col + 1})')
 
     @staticmethod
