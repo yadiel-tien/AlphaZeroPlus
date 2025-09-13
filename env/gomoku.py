@@ -180,7 +180,7 @@ class Gomoku(BaseEnv):
     def augment_data(cls, data: tuple[NDArray, NDArray, float]) -> list[tuple[NDArray, NDArray, float]]:
         """通过旋转和翻转棋盘进行数据增强
             - ChineseChess 支持水平翻转
-            - Gomoku 支持16种增强
+            - Gomoku 支持8种增强
         :param data: (state,pi,q)
          :return 增强后的列别[(state,pi,v)]"""
         state, pi, v = data
@@ -193,7 +193,5 @@ class Gomoku(BaseEnv):
             transformed_state = apply_symmetry(state.copy(), i)
             transformed_prob = mirror_board_policy(pi.copy(), i, state.shape)
             augmented_samples.append((transformed_state, transformed_prob, v))
-            # 互换角色
-            augmented_samples.append((transformed_state[:,:,[1,0]], transformed_prob, -v))
 
         return augmented_samples

@@ -1,12 +1,11 @@
+import glob
 import os
 from typing import Self
 
 import torch
 from torch import Tensor, nn
 
-from inference.functions import get_model_path, get_checkpoint_path
-from utils.config import CONFIG
-from utils.types import EnvName
+from utils.config import CONFIG, settings, NetConfig
 
 
 class ConvBlock(nn.Module):
@@ -97,12 +96,12 @@ class PolicyHead(nn.Module):
 
 
 class ValueHead(nn.Module):
-    def __init__(self, in_channels: int, hidden_channels: int, n_cells: int) -> None:
+    def __init__(self, in_channels: int, n_filters: int, hidden_channels: int, n_cells: int) -> None:
         """价值头,输出当前盘面价值。【B,in_channels,H,W]->[B]"""
         super().__init__()
-        self.conv = nn.Conv2d(in_channels, 1, kernel_size=1, stride=1)
+        self.conv = nn.Conv2d(in_channels, n_filters, kernel_size=1, stride=1)
         self.relu1 = nn.LeakyReLU()
-        self.fc1 = nn.Linear(n_cells, hidden_channels)
+        self.fc1 = nn.Linear(n_cells * n_filters, hidden_channels)
         self.relu2 = nn.LeakyReLU()
         self.fc2 = nn.Linear(hidden_channels, 1)
         self.tanh = nn.Tanh()
@@ -111,7 +110,7 @@ class ValueHead(nn.Module):
         # x:[B,in_channels,H,W]
         x = self.conv(x)
         x = self.relu1(x)
-        # x:[B,1,H,W]
+        # x:[B,n_filters,H,W]
         x = x.reshape(x.shape[0], -1)
         # x:[B,H*W]
         x = self.fc1(x)
@@ -123,19 +122,36 @@ class ValueHead(nn.Module):
 
 
 class Net(nn.Module):
-    def __init__(self, n_filters: int, n_cells=15 * 15, n_res_blocks=7, n_channels=2, n_actions=15 * 15,
-                 with_se: bool = False) -> None:
+    def __init__(self, config: NetConfig = settings['default_net'], eval_model: bool = True,
+                 device=CONFIG['device']) -> None:
         """
         类alpha zero结构，双头输出policy和value
-        :param n_filters: 卷积层通道数
-        :param n_cells: 动作空间大小，应等于H*W
-        :param n_res_blocks: 残差块个数
         """
         super().__init__()
-        self.conv_block = ConvBlock(n_channels, n_filters)
-        self.res_blocks = nn.ModuleList([ResBlock(n_filters, with_se) for _ in range(n_res_blocks)])
-        self.policy = PolicyHead(n_filters, 32, n_cells, n_actions)
-        self.value = ValueHead(n_filters, 256, n_cells)
+        self.config = config
+
+        self.conv_block = ConvBlock(config['in_channels'], config['n_filters'])
+        self.res_blocks = nn.ModuleList(
+            [ResBlock(config['n_filters'], config['use_se'])
+             for _ in range(config['n_res_blocks'])])
+        self.policy = PolicyHead(config['n_filters'],
+                                 config['n_policy_filters'],
+                                 config['n_cells'],
+                                 config['n_actions'])
+        self.value = ValueHead(config['n_filters'],
+                               config['n_value_filters'],
+                               config['n_value_hidden_channels'],
+                               config['n_cells'])
+        self.to(device)
+        # 推理模式
+        if eval_model:
+            self.eval()
+            msg = f'Network initialized in eval mode on {device}, configuration as below:'
+        else:
+            msg = f'Network initialized in training mode on {device}, configuration as below:'
+        print(msg)
+        for key, value in self.config.items():
+            print(f' {key}:  {value}')
 
     def forward(self, x: Tensor) -> tuple[Tensor, Tensor]:
         x = self.conv_block(x)
@@ -144,32 +160,40 @@ class Net(nn.Module):
         return self.policy(x), self.value(x)
 
     @classmethod
-    def make_raw_model(cls, env_name: EnvName, eval_model: bool, with_se: bool = True) -> Self:
-        """工厂方法创建初始模型"""
-        settings = CONFIG[env_name]
-        model = cls(settings['n_filter'], settings['n_cells'], settings['n_res_blocks'],
-                    settings['n_channels'], settings['n_actions'], with_se).to(CONFIG['device'])
-        if eval_model:
-            model.eval()
-            print('Raw model created in eval mode.')
-        else:
-            print('Raw model created in training mode.')
-        return model
+    def load_latest_from_folder(cls, folder: str, eval_model: bool = True, device=CONFIG['device']) -> tuple[Self, int]:
+        """从文件夹中读取最新的存档加载,没有的话通过config创建新模型
+        :return 加载好的模型和编号"""
+        pattern = os.path.join(folder, 'checkpoint_*.pt')
+        files = glob.glob(pattern)
+        max_index = -1
+        latest_file = ''
+        # 编号最大的就是最新的模型
+        for file in files:
+            index = int(file.split('_')[-1].split('.')[0])
+            if index > max_index:
+                max_index = index
+                latest_file = file
+        model, success = cls.load_from_checkpoint(latest_file, eval_model=eval_model)
+        if success:
+            return model, max_index
 
-    def load_from_index(self, model_idx: int, env_name: EnvName) -> bool:
-        """尝试通过id加载模型，返回加载结果"""
-        # 先尝试从模型加载
-        model_path = get_model_path(env_name, model_idx)
-        if os.path.exists(model_path):
-            self.load_state_dict(
-                torch.load(model_path, map_location=CONFIG['device']))
-            print(f'Model {model_idx} loaded successfully from {model_path}.')
-            return True
-        # 尝试从存档加载
-        checkpoint_path = get_checkpoint_path(env_name, model_idx)
-        if os.path.exists(checkpoint_path):
-            checkpoint = torch.load(checkpoint_path, map_location=CONFIG['device'])
-            self.load_state_dict(checkpoint['model'])
-            print(f'Model {model_idx} loaded successfully from {checkpoint_path}.')
-            return True
-        return False
+        return model, -1
+
+    @classmethod
+    def load_from_checkpoint(cls, path: str, eval_model: bool = True, device=CONFIG['device']) -> tuple[Self, bool]:
+        """从存档读取模型配置创建模型，并加载参数
+        :return model和是否成功"""
+        success = True
+        try:
+            checkpoint = torch.load(path, map_location=CONFIG['device'])
+            config = checkpoint['config']
+            # 创建网络
+            model = cls(config, eval_model=eval_model, device=device)
+            # 加载参数
+            model.load_state_dict(checkpoint['model'])
+        except FileNotFoundError or KeyError:
+            success = False
+            print('Checkpoint read error,  creating new model from default settings.')
+            model = cls(eval_model=eval_model, device=device)
+
+        return model, success

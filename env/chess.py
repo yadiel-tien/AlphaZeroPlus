@@ -1,3 +1,4 @@
+
 from gymnasium import spaces
 from numpy.typing import NDArray
 from utils.config import CONFIG
@@ -145,25 +146,29 @@ class ChineseChess(BaseEnv):
         :return: arr: board_shape=(10, 9, 20), dtype=np.float32
 
         """
+        # 到对手玩家时翻转棋盘，上下和左右都要翻转，保证当前玩家始终在下方
+        cur_state = state if current_player == 0 else np.flip(state, axis=(0, 1))
+
         arr = np.zeros((10, 9, 20), dtype=np.float32)
         # 当前盘面
-        board = state[:, :, 0]
-        # 当前盘面编码，0-13代表不同棋子
-        for i in range(14):
-            arr[:, :, i] = np.asarray(board == i, dtype=np.float32)
+        board = cur_state[:, :, 0]
+        # 当前盘面编码，0-13代表不同棋子，保证当前玩家始终是0-6
+        if current_player == 0:
+            for i in range(14):
+                arr[:, :, i] = np.asarray(board == i, dtype=np.float32)
+        else:
+            for i in range(7):
+                arr[:, :, i] = np.asarray(board == i + 7, dtype=np.float32)
+            for i in range(7, 14):
+                arr[:, :, i] = np.asarray(board == i - 7, dtype=np.float32)
 
-        # 交换位置，保证0-6当前玩家
-        if current_player == 1:
-            temp = arr[:, :, :7]
-            arr[:, :, :7] = arr[:, :, 7:14]
-            arr[:, :, 7:14] = temp
         # 最近4步差分历史信息
         for i in range(1, 6):
-            arr[:, :, 13 + i] = np.equal(state[:, :, i - 1], state[:, :, i]).astype(np.float32)
+            arr[:, :, 13 + i] = np.equal(cur_state[:, :, i - 1], cur_state[:, :, i]).astype(np.float32)
         # 编码未吃子步数，超过100判和
-        arr[:, :, -1] = state[:, :, -1].astype(np.float32) / 100.0
+        arr[:, :, -1] = cur_state[:, :, -1].astype(np.float32) / 100.0
 
-        return arr if current_player == 0 else np.flipud(arr)
+        return arr
 
     @classmethod
     def get_valid_actions(cls, state: NDArray, player_to_move: int) -> NDArray[np.int_]:
@@ -412,6 +417,12 @@ class ChineseChess(BaseEnv):
         return mirror_action_policy(policy, symmetry_idx, cls.mirror_lr_actions,
                                     cls.mirror_ud_actions)
 
+    @classmethod
+    def switch_side_policy(cls, policy: NDArray) -> NDArray:
+        """交换红黑双方，上下和左右都进行了镜像翻转，输出翻转后的policy"""
+        lr_policy = mirror_action_policy(policy, 4, cls.mirror_lr_actions, cls.mirror_ud_actions)
+        return mirror_action_policy(lr_policy, 5, cls.mirror_lr_actions, cls.mirror_ud_actions)
+
     @staticmethod
     def _get_rook_dest(state: NDArray, r: int, c: int) -> list[tuple[int, int]]:
         board = state[:, :, 0]
@@ -578,15 +589,13 @@ class ChineseChess(BaseEnv):
     @classmethod
     def augment_data(cls, data: tuple[NDArray, NDArray, float]) -> list[tuple[NDArray, NDArray, float]]:
         """通过旋转和翻转棋盘进行数据增强
-            - ChineseChess 支持左右翻转，玩家反转
+            - ChineseChess 只支持左右翻转
         :param data: (state,pi,q)
          :return 增强后的列别[(state,pi,q)]"""
         state, pi, q = data
         augmented_samples = [data]
-        indices = (4, 5)
-        for i in indices:
-            transformed_state = apply_symmetry(state, i)
-            transformed_prob = mirror_action_policy(pi, i, cls.mirror_lr_actions,
-                                                    cls.mirror_ud_actions)
-            augmented_samples.append((transformed_state, transformed_prob, q))
+        transformed_state = apply_symmetry(state, 4)
+        transformed_prob = mirror_action_policy(pi, 4, cls.mirror_lr_actions,
+                                                cls.mirror_ud_actions)
+        augmented_samples.append((transformed_state, transformed_prob, q))
         return augmented_samples

@@ -9,7 +9,7 @@ import torch
 from numpy.typing import NDArray
 
 from utils.types import EnvName
-from .functions import get_model_name
+from .functions import get_model_name, get_checkpoint_path
 from .request import QueueRequest, SocketRequest
 from utils.config import CONFIG
 from network.network import Net
@@ -18,8 +18,9 @@ from network.network import Net
 class InferenceEngine:
     def __init__(self, model_index: int, env_name: EnvName, training: bool = False):
         # 推理model
-        self.eval_model = Net.make_raw_model(env_name, eval_model=True)
-        if not self.eval_model.load_from_index(model_index, env_name):
+        model_path = get_checkpoint_path(env_name, model_index)
+        self.eval_model, success, = Net.load_from_checkpoint(model_path, eval_model=True)
+        if not success:
             model_index = -1
         self.env_name = env_name
         self.name = get_model_name(env_name, model_index)
@@ -36,9 +37,14 @@ class InferenceEngine:
             # 置换表
             self.transposition_table = OrderedDict()
             self.tt_lock = threading.Lock()
-            self.tt_max_size = 3_000_000
+            self.tt_max_size = 200_000
             self.hit = 0
             self.total_request = 0
+
+    def make_chinese_chess_state_key(self, state: NDArray) -> bytes:
+        """供置换表使用"""
+        arr = (state[:, :, :14] > 0.5).astype(np.uint8)  # 保证0/1
+        return arr.tobytes()
 
     def start(self) -> None:
         """启动推理线程"""
@@ -68,7 +74,7 @@ class InferenceEngine:
                         # 检查缓存
                         with self.tt_lock:
                             self.total_request += 1
-                            key = request.state[:, :, :14].astype(np.int8).tobytes()
+                            key = self.make_chinese_chess_state_key(request.state)
                             if key in self.transposition_table:  # 命中
                                 policy, value = self.transposition_table[key]
                                 self.deliver_one(request, policy, value)
@@ -126,15 +132,14 @@ class InferenceEngine:
                 # 更新缓存
                 with self.tt_lock:
                     for request, prob, value in zip(requests, probs, values):
-                        key = request.state[:, :, :14].astype(np.int8).tobytes()
+                        key = self.make_chinese_chess_state_key(request.state)
                         self.transposition_table[key] = (prob, value)
                     # LRU清理旧缓存
                     while len(self.transposition_table) > self.tt_max_size:
                         self.transposition_table.popitem(last=False)
 
                     msg += f' hit rate: {self.hit / (self.total_request + 1) :.2%}, total:{self.total_request}.'
-
-            print(msg, end='\r')
+                print(msg, end='\r')
 
     def deliver_result(self, requests: list[QueueRequest], probs: Sequence[NDArray], values: Sequence[float]) -> None:
         # 结果交给请求方，通知request继续

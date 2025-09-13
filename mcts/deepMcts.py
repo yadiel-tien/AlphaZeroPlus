@@ -1,13 +1,13 @@
 import collections
 import queue
 import socket
-import threading
 import time
 from typing import Self, cast
 
 import numpy as np
 from numpy.typing import NDArray
 
+from env.chess import ChineseChess
 from env.env import BaseEnv
 from inference.client import send_request, apply_for_socket_path
 from utils.config import CONFIG
@@ -129,7 +129,7 @@ class NeuronNode:
         policy, value = send_request(sock, state, cast(EnvName, self.env.__name__), infer_queue, is_self_play)
         # 象棋采用了红黑交换，需要对应反转概率
         if self.player_to_move == 1 and self.env.__class__ == "ChineseChess":
-            policy = self.env.restore_policy(policy, 5)
+            policy = ChineseChess.switch_side_policy(policy)
 
         # 记录胜率
         self.win_rate = (-value + 1) / 2
@@ -233,7 +233,6 @@ class NeuronMCTS:
         mcts = cls(state, env_class, last_action, player_to_move)
         sock_path = apply_for_socket_path(model_id, env_class.__name__)
         mcts.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-
         # 需要等服务端建立好文件
         start = time.time()
         while True:

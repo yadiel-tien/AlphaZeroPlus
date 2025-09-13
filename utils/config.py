@@ -16,19 +16,27 @@ cwd = '/home/bigger/projects/five_in_a_row'
 color_key = Literal['blue', 'green', 'red', 'orange', 'grey', 'black']
 
 
+class NetConfig(TypedDict):
+    in_channels: int  # 输入通道数
+    n_filters: int  # 卷积层filter数量
+    n_res_blocks: int  # 残差网络数量
+    n_cells: int  # 输入state的H*W
+    n_actions: int  # policy输出动作的数量
+    use_se: bool  # 是否使用SEBlock
+    n_policy_filters: int  # 策略头卷积层filter数量
+    n_value_filters: int  # 价值头卷积层filter数量
+    n_value_hidden_channels: int  # 价值头隐藏层fc输出通道
+
+
 class GameConfig(TypedDict):
     screen_size: tuple[int, int]
     grid_size: float
-    n_filter: int
-    n_cells: int
-    n_res_blocks: int
-    n_channels: int
-    n_actions: int
     img_path: str
     state_shape: tuple[int, ...]
     tao_switch_steps: int
     augment_times: int
-    max_iters:int
+    max_iters: int
+    default_net: NetConfig
 
 
 class AppConfig(TypedDict):
@@ -48,7 +56,7 @@ class AppConfig(TypedDict):
     best_index_name: str
     ema_name: str
     rates_dir: str
-    training_steps_per_sample:int
+    training_steps_per_sample: int
 
 
 CONFIG: AppConfig = {
@@ -63,30 +71,42 @@ CONFIG: AppConfig = {
     'ChineseChess': {
         'screen_size': (600, 800),
         'grid_size': 54,
-        'n_filter': 256,
         'state_shape': (10, 9, 20),
-        'n_cells': 10 * 9,
-        'n_res_blocks': 15,
-        'n_channels': 20,
-        'n_actions': 2086,
         'img_path': './graphics/chess/board.jpeg',
         'tao_switch_steps': 30,
-        'augment_times': 3,
-        'max_iters':1000
+        'augment_times': 2,
+        'max_iters': 1000,
+        'default_net': {
+            'in_channels': 20,  # 输入通道数
+            'n_filters': 256,  # 卷积层filter数量
+            'n_cells': 10 * 9,  # 输入H*W
+            'n_res_blocks': 15,  # 残差网络数量
+            'n_actions': 2086,  # policy输出动作的数量
+            'use_se': True,  # 是否使用SEBlock
+            'n_policy_filters': 32,  # 策略头卷积层filter数量
+            'n_value_filters': 32,  # 价值头卷积层filter数量
+            'n_value_hidden_channels': 32  # 价值头隐藏层fc输出通道
+        }
     },
     'Gomoku': {
         'screen_size': (600, 800),
         'grid_size': 35.2857,
-        'n_filter': 256,
         'state_shape': (15, 15, 2),
-        'n_cells': 15 * 15,
-        'n_res_blocks': 10,
-        'n_channels': 2,
-        'n_actions': 15 * 15,
         'img_path': './graphics/gomoku/board.jpeg',
         'tao_switch_steps': 5,
         'augment_times': 16,
-        'max_iters':300
+        'max_iters': 300,
+        'default_net': {
+            'in_channels': 2,  # 输入通道数
+            'n_filters': 256,  # 卷积层filter数量
+            'n_cells': 15 * 15,  # 输入H*W
+            'n_res_blocks': 11,  # 残差网络数量
+            'n_actions': 15 * 15,  # policy输出动作的数量
+            'use_se': True,  # 是否使用SEBlock
+            'n_policy_filters': 32,  # 策略头卷积层filter数量
+            'n_value_filters': 1,  # 价值头卷积层filter数量
+            'n_value_hidden_channels': 256  # 价值头隐藏层fc输出通道
+        }
     },
     'data_dir': './data/',
     'dirichlet': 0.2,
@@ -101,7 +121,7 @@ CONFIG: AppConfig = {
     'best_index_name': 'best_index.pkl',
     'ema_name': 'ema.pkl',
     'rates_dir': './rates/',
-    'training_steps_per_sample':5
+    'training_steps_per_sample': 5
 }
 game_name = CONFIG['game_name']
 settings = CONFIG[game_name]

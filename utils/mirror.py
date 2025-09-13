@@ -20,7 +20,7 @@ def random_mirror_state_ip(state: NDArray, env_name: str) -> tuple[NDArray, int]
     返回：
         变换后的 ndarray"""
     if env_name == 'ChineseChess':
-        # 象棋只支持上下左右翻转
+        # 象棋只支持左右翻转
         if random.random() < 0.5 :
             return apply_symmetry(state, 4), 4
 

@@ -25,7 +25,7 @@ class TrainServer(InferServer):
         super().__init__(model_id, env_name, max_listen_workers, training=True)
         self.logger = get_logger('fit')
         # 模型
-        self.fit_model = Net.make_raw_model(env_name, eval_model=False)
+        self.fit_model = Net(self.eval_model.config).to(CONFIG['device'])
         # 优化器和学习率调解器
         self.optimizer = torch.optim.Adam(self.fit_model.parameters(), lr=1e-3, weight_decay=1e-4)
         self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer=self.optimizer,
@@ -51,9 +51,7 @@ class TrainServer(InferServer):
             self.total_steps_trained = checkpoint['total_steps_trained']
             self.logger.info(f'Load checkpoint successfully. Iteration: {iteration}, Step: {self.total_steps_trained}.')
         else:
-            self.logger.info(f'Checkpoint not found. Trying to load from model file...')
-            if not self.fit_model.load_from_index(iteration, self.env_name):
-                self.logger.info(f'Loading failed.Starting from raw model.')
+            self.logger.info(f'Checkpoint {iteration} not found.Starting from raw model.')
 
     def save_checkpoint(self, iteration: int) -> None:
         """保存存档"""
@@ -63,6 +61,7 @@ class TrainServer(InferServer):
             'model': self.fit_model.state_dict(),
             'optimizer': self.optimizer.state_dict(),
             'scheduler': self.scheduler.state_dict(),
+            'config': self.fit_model.config
         }
 
         # 保存新模型参数
@@ -156,6 +155,16 @@ class TrainServer(InferServer):
             self.optimizer.zero_grad()  # 清空旧梯度
             loss.backward()  # 反向传播
 
+            # 检查梯度，debug用
+            # print("--- Value Head Gradients ---")
+            # for name, param in self.fit_model.value.named_parameters():
+            #     if param.grad is not None:
+            #         # 打印梯度的平均绝对值，比均值更能反映梯度大小
+            #         print(f"{name}: {param.grad.abs().mean().item():.6f}", end=', ')
+            #     else:
+            #         print(f"{name}:None", end=', ')
+            # print("\n--------------------------")
+
             torch.nn.utils.clip_grad_norm_(self.fit_model.parameters(), max_norm=1.0)  # 将梯度范数裁剪到1.0
             self.optimizer.step()  # 更新参数
 
@@ -173,7 +182,7 @@ class TrainServer(InferServer):
             )
         # 清空缓存
         with self.tt_lock:
-            # self.transposition_table.clear()
+            self.transposition_table.clear()
             self.total_request = 0
             self.hit = 0
         # 更新学习率调解器

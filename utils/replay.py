@@ -5,14 +5,14 @@ import numpy as np
 from numpy.typing import NDArray
 
 from env.functions import get_class
-from .config import game_name, CONFIG
+from .config import game_name, CONFIG, settings
 from .types import EnvName
 
 
 class NumpyBuffer:
     def __init__(self, capacity: int, batch_size: int, game: EnvName = game_name) -> None:
-        self.state_buffer = np.zeros((capacity,) + CONFIG[game]['state_shape'], dtype=np.float32)
-        self.policy_buffer = np.zeros((capacity, CONFIG[game]['n_actions']), dtype=np.float32)
+        self.state_buffer = np.zeros((capacity,) + settings['state_shape'], dtype=np.float32)
+        self.policy_buffer = np.zeros((capacity, settings['default_net']['n_actions']), dtype=np.float32)
         self.value_buffer = np.zeros((capacity,), dtype=np.float32)
         self.batch_size = batch_size
         self.pointer = 0

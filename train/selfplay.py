@@ -1,8 +1,12 @@
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import cast
+
 import numpy as np
 from numpy.typing import NDArray
 from tqdm import tqdm
+
+from env.chess import ChineseChess
 from env.functions import get_class
 from utils.logger import get_logger
 from utils.replay import NumpyBuffer
@@ -30,7 +34,7 @@ class SelfPlayManager:
         while iteration < settings['max_iters']:
             self.logger.info(f'Starting selfplay, iteration {iteration}')
             # 先保证buffer足够大
-            while self.buffer.size < self.buffer.capacity * 0.6:
+            while self.buffer.size < self.buffer.capacity * 0.4:
                 self.self_play(iteration=iteration, n_games=50)
                 self.logger.info(f'Collecting data.Current buffer size: {self.buffer.size}.')
 
@@ -134,10 +138,11 @@ class SelfPlayManager:
             z = -1.0 if env.winner == 1 - p else 1.0 if env.winner == p else 0.0
             # q与z加权使用
             v = (z - q) / 2
+            # print("DEBUG sample winner,p,z,q，v:", env.winner, p, z, q, v)
 
             # 交换红黑双方位置对应的概率分布
             if p == 1 and self.env_class.__name__ == 'ChineseChess':
-                pi = env.restore_policy(pi, 5)
+                pi = ChineseChess.switch_side_policy(pi)
 
             samples[i] = state, pi, v
 
