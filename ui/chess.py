@@ -7,7 +7,8 @@ from utils.config import GameConfig, CONFIG
 from player.human import Human
 from env.chess import ChineseChess
 
-Mark: TypeAlias = Literal['green_dot', 'red_dot', 'blue_circle', 'green_circle', 'low_shadow', 'high_shadow']
+Mark: TypeAlias = Literal[
+    'green_dot', 'red_dot', 'blue_dot', 'blue_circle', 'green_circle', 'low_shadow', 'high_shadow']
 settings: GameConfig = CONFIG['ChineseChess']
 
 
@@ -37,7 +38,8 @@ class ChineseChessUI(GameUI):
             pic = pygame.transform.smoothscale(pic, (65, 65))
             self.piece_pics[i] = pic
 
-        marks: tuple[Mark, ...] = ('red_dot', 'green_dot', 'blue_circle', 'green_circle', 'low_shadow', 'high_shadow')
+        marks: tuple[Mark, ...] = ('red_dot', 'green_dot', 'blue_dot', 'blue_circle', 'green_circle', 'low_shadow',
+                                   'high_shadow')
         for mark in marks:
             pic = pygame.image.load(f'graphics/chess/{mark}.png')
             self.mark_pics[mark] = pygame.transform.smoothscale(pic, (65, 65))
@@ -103,8 +105,8 @@ class ChineseChessUI(GameUI):
             return
 
         # 吃子
-        _, _, to_r, to_c = self.env.action2move(action)
-        target = self.env.state[to_r, to_c, 1]
+        _, _, tr, tc = self.env.action2move(action)
+        target = self.env.state[tr, tc, 1]
         if target not in [-1, 4, 11]:
             self.capture_sound.play()
 
@@ -160,10 +162,11 @@ class ChineseChessUI(GameUI):
         """最后走的棋子周围绘制蓝色圆圈"""
         if self.history:
             action, _ = self.history[-1]
-            _, _, to_r, to_c = self.env.action2move(action)
-            grid = to_r, to_c
-            x, y = self._grid2pos(grid)
-            self.screen.blit(self.mark_pics['blue_circle'], (x, y))
+            r, c, tr, tc = self.env.action2move(action)
+            x, y = self._grid2pos((r, c))
+            tx, ty = self._grid2pos((tr, tc))
+            self.screen.blit(self.mark_pics['blue_dot'], (x, y))
+            self.screen.blit(self.mark_pics['blue_circle'], (tx, ty))
 
     def draw_dot_mark(self) -> None:
         """用来指示所有可走棋步"""
@@ -180,4 +183,3 @@ class ChineseChessUI(GameUI):
         """调节位置偏差"""
         x, y = super()._grid2pos(grid)
         return x - 4 - x // 200, y - y // 100
-

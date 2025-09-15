@@ -14,7 +14,7 @@ from network.network import Net
 from utils.replay import NumpyBuffer
 from utils.types import EnvName
 from .infer_server import InferServer
-from .functions import recv, get_checkpoint_path, send
+from .functions import recv, get_checkpoint_path
 from utils.config import CONFIG, settings
 from utils.logger import get_logger
 from .request import SocketRequest
@@ -181,10 +181,7 @@ class TrainServer(InferServer):
                 f" loss={loss.item():.4f}, policy_loss={policy_loss.item():.4f}, value_loss={value_loss.item():.4f}"
             )
         # 清空缓存
-        with self.tt_lock:
-            self.transposition_table.clear()
-            self.total_request = 0
-            self.hit = 0
+        self.clear_flag = True
         # 更新学习率调解器
         self.writer.add_scalar('Learning Rate', self.scheduler.get_last_lr()[0], self.total_steps_trained)
         self.scheduler.step()

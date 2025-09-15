@@ -41,7 +41,7 @@ def setup(data: Any) -> Any:
         pid = str(uuid.uuid4())
         with lock:
             clients_live_time[pid] = time.time()
-            ai_players[pid] = AIServer(env_name, model_id, 2000)
+            ai_players[pid] = AIServer(env_name, model_id, 1000)
         return jsonify({"status": "success", 'pid': pid})
     except Exception as e:
         print(f'Failed to setup AI: {e}')

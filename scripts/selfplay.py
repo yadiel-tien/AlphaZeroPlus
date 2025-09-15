@@ -3,7 +3,7 @@ from train.selfplay import SelfPlayManager
 
 
 def main():
-    manager = SelfPlayManager(36)
+    manager = SelfPlayManager(40)
 
     register_sigint(manager.shutdown)
 

@@ -45,10 +45,13 @@ class NeuronNode:
         self.child_p = np.zeros(self.n_actions, dtype=np.float32)  # 先验概率
         self.is_expanded = False
         self.leaf_reward = GameResult.ONGOING  # 终局的奖励，1胜，0平，-1负，2未结束
-        self.win_rate = 0.5
 
     def __repr__(self) -> str:
         return f'move={self.env.action2move(self.last_action) if self.last_action != -1 else -1},N={self.n},W={self.w:.2f}'
+
+    @property
+    def win_rate(self) -> float:
+        return (self.w / self.n + 1) / 2 if self.n > 0 else 0.5
 
     @property
     def depth(self) -> int:
@@ -121,7 +124,6 @@ class NeuronNode:
                                                      1 - self.player_to_move,
                                                      self.last_action)  # 1胜，0平，-1负, 2未分胜负
         if self.leaf_reward != GameResult.ONGOING:
-            self.win_rate = (self.leaf_reward + 1) / 2
             return float(self.leaf_reward)
         # 转换为适合神经网络的表示
         state = self.env.convert_to_network(self.state, self.player_to_move)
@@ -131,8 +133,6 @@ class NeuronNode:
         if self.player_to_move == 1 and self.env == ChineseChess:
             policy = ChineseChess.switch_side_policy(policy)
 
-        # 记录胜率
-        self.win_rate = (-value + 1) / 2
         # 概率归一化
         scale = policy.sum()
         if scale > 0:

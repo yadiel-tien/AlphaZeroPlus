@@ -36,10 +36,10 @@ class InferenceEngine:
         if self.training:
             # 置换表
             self.transposition_table = OrderedDict()
-            self.tt_lock = threading.Lock()
-            self.tt_max_size = 200_000
+            self.tt_max_size = 500_000
             self.hit = 0
             self.total_request = 0
+            self.clear_flag = False
 
     def make_chinese_chess_state_key(self, state: NDArray) -> bytes:
         """供置换表使用"""
@@ -60,29 +60,16 @@ class InferenceEngine:
         while self.running:
             batch_size = 1
             threshold = 8
-            max_size = 12
+            max_size = 20
             n_pending = self.infer_queue.qsize()
             delay = 5e-4 + 3e-4 * n_pending  # 根据queue排队情况，动态调整
             phase = 'ramp up'
             requests = []
 
-            while self.running:
+            while len(requests) < min(batch_size, max_size):
                 # 思路参考tcp拥塞控制
                 try:
                     request = self.request_queue.get(timeout=delay)
-                    if self.training:
-                        # 检查缓存
-                        with self.tt_lock:
-                            self.total_request += 1
-                            key = self.make_chinese_chess_state_key(request.state)
-                            if key in self.transposition_table:  # 命中
-                                policy, value = self.transposition_table[key]
-                                self.deliver_one(request, policy, value)
-                                # LRU
-                                self.transposition_table.move_to_end(key)
-                                self.hit += 1
-                                continue
-
                     requests.append(request)
                     if phase == 'ramp up':
                         if batch_size < threshold:
@@ -93,16 +80,10 @@ class InferenceEngine:
                     elif phase == 'steady increase':
                         batch_size += 1
 
-                    if len(requests) >= min(batch_size, max_size):
-                        break
-
                 except queue.Empty:
                     threshold = max(1, batch_size // 2)
                     batch_size = threshold
-                    if len(requests) >= batch_size:
-                        break
-                    else:
-                        phase = 'ramp up'
+                    phase = 'ramp up'
             if requests:
                 self.infer_queue.put(requests)
 
@@ -110,12 +91,40 @@ class InferenceEngine:
         """推理loop，持续不断的接收state，打包，发GPU推理，返回结果"""
         while self.running:
             start = time.time()
+            # 收到清空信号重置置换表
+            if self.training and self.clear_flag:
+                self.clear_flag = False
+                self.hit = 0
+                self.total_request = 0
+                self.transposition_table.clear()
+
+            # 获取推理列表
             try:
                 requests = self.infer_queue.get(timeout=0.5)
             except queue.Empty:
                 continue  # 避免get阻塞不能结束循环
+
+            # 检查缓存
+            if self.training:
+                miss_list = []
+                for request in requests:
+                    self.total_request += 1
+                    key = self.make_chinese_chess_state_key(request.state)
+                    if key in self.transposition_table:  # 命中
+                        policy, value = self.transposition_table[key]
+                        self.deliver_one(request, policy, value)
+                        # LRU
+                        self.transposition_table.move_to_end(key)
+                        self.hit += 1
+                    else:
+                        miss_list.append(request)
+            else:
+                miss_list = requests
+            if not miss_list:
+                continue
+
             # 处理batch，转为tensor
-            batch = [np.transpose(request.state, axes=[2, 0, 1]) for request in requests]
+            batch = [np.transpose(request.state, axes=[2, 0, 1]) for request in miss_list]
             batch_tensor = torch.from_numpy(np.stack(batch)).to(CONFIG['device'], dtype=torch.float32)
 
             # 交模型推理，取回结果
@@ -125,20 +134,19 @@ class InferenceEngine:
                         logits, values = self.eval_model(batch_tensor)
             probs = torch.nn.functional.softmax(logits.float(), dim=-1).cpu().numpy()
             values = values.float().cpu().numpy()
-            self.deliver_result(requests, probs, values)
-            msg = f'{len(requests):>2} requests inference took {time.time() - start:.10f} seconds.Pending:{self.infer_queue.qsize():2}.'
+            self.deliver_result(miss_list, probs, values)
 
+            # 更新缓存
             if self.training:
-                # 更新缓存
-                with self.tt_lock:
-                    for request, prob, value in zip(requests, probs, values):
-                        key = self.make_chinese_chess_state_key(request.state)
-                        self.transposition_table[key] = (prob, value)
-                    # LRU清理旧缓存
-                    while len(self.transposition_table) > self.tt_max_size:
-                        self.transposition_table.popitem(last=False)
+                for request, prob, value in zip(miss_list, probs, values):
+                    key = self.make_chinese_chess_state_key(request.state)
+                    self.transposition_table[key] = (prob, value)
+                # LRU清理旧缓存
+                while len(self.transposition_table) > self.tt_max_size:
+                    self.transposition_table.popitem(last=False)
 
-                    msg += f' hit rate: {self.hit / (self.total_request + 1) :.2%}, total:{self.total_request}.'
+                msg = f'{len(miss_list):>2} requests inference took {time.time() - start:.10f} seconds.Pending:{self.infer_queue.qsize():2}.'
+                msg += f' hit rate: {self.hit / (self.total_request + 1) :.2%}, total:{self.total_request}.'
                 print(msg, end='\r')
 
     def deliver_result(self, requests: list[QueueRequest], probs: Sequence[NDArray], values: Sequence[float]) -> None:

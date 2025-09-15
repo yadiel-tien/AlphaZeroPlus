@@ -31,6 +31,7 @@ class InferServer(InferenceEngine):
         self._listen_thread = threading.Thread(target=self._listen_loop, daemon=True)
         self._listen_thread.start()
 
+
     @property
     def socket_path(self) -> str:
         """根据infer名称自动分配socket path"""

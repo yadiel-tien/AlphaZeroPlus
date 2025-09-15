@@ -151,7 +151,8 @@ class Net(nn.Module):
             msg = f'Network initialized in training mode on {device}, configuration as below:'
         print(msg)
         for key, value in self.config.items():
-            print(f' {key}:  {value}')
+            print(f'{key}:  {value}, ',end='')
+        print()
 
     def forward(self, x: Tensor) -> tuple[Tensor, Tensor]:
         x = self.conv_block(x)

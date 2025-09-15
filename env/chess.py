@@ -1,4 +1,3 @@
-
 from gymnasium import spaces
 from numpy.typing import NDArray
 from utils.config import CONFIG
@@ -40,7 +39,7 @@ class ChineseChess(BaseEnv):
         array.board_shape=(10,9,7),[0-5]层代表最近6步，数字-1代表空白，0-13代表不同棋子。[6]层代表未吃子步数，0-100归一化到0-1
         """
         self.state: NDArray[np.int32] = np.zeros(self.shape, dtype=np.int32)
-        self.state[:, :, 0] = np.array([
+        board = np.array([
             [7, 8, 9, 10, 11, 10, 9, 8, 7],
             [-1, -1, -1, -1, -1, -1, -1, -1, -1],
             [-1, 12, -1, -1, -1, -1, -1, 12, -1],
@@ -52,6 +51,8 @@ class ChineseChess(BaseEnv):
             [-1, -1, -1, -1, -1, -1, -1, -1, -1],
             [0, 1, 2, 3, 4, 3, 2, 1, 0],
         ])
+        # 历史层也填充为初始棋盘
+        self.state[:, :, :-1] = board[:, :, np.newaxis]
         self.reset_status()
         return self.state, {}
 

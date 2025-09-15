@@ -83,7 +83,7 @@ class AIClient(Player):
                 url,
                 data=json.dumps(payload),
                 headers=headers,
-                timeout=10  # 添加超时设置
+                timeout=40  # 添加超时设置
             )
             response.raise_for_status()  # 自动处理4xx/5xx错误
 
