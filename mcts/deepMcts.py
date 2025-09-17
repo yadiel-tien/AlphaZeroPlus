@@ -158,12 +158,13 @@ class NeuronNode:
             result = -result
             node = node.parent
 
-    def inject_noise(self, alpha=0.3, noise_weight=0.25) -> None:
+    def inject_noise(self, noise_weight=0.25) -> None:
         """根节点添加狄利克雷噪声，增加随机性"""
         legal_len = len(self.valid_actions)
         if legal_len == 0:
             return
-
+        # 按照alphazero的参数，根据合法动作个数调整
+        alpha = 0.03 * 361 / legal_len
         noise = np.random.dirichlet([alpha] * legal_len)
         self.child_p[self.valid_actions] = noise * noise_weight + (1 - noise_weight) * self.child_p[
             self.valid_actions]
@@ -264,6 +265,10 @@ class NeuronMCTS:
         # n,w在父节点存储，更改父节点需要迁移
         self.root.parent = DummyNode()  # 删除多余分叉
         self.root.n, self.root.w = n, w
+
+        # 新的根节点添加噪声
+        if self.is_self_play:
+            self.root.inject_noise()
 
     def run(self, n_simulation=1000) -> None:
         """进行MCTS模拟，模拟完成后可根据孩子节点状态选择优势动作"""

@@ -75,7 +75,7 @@ CONFIG: AppConfig = {
         'img_path': './graphics/chess/board.jpeg',
         'tao_switch_steps': 30,
         'augment_times': 2,
-        'max_iters': 1000,
+        'max_iters': 500,
         'default_net': {
             'in_channels': 20,  # 输入通道数
             'n_filters': 256,  # 卷积层filter数量
@@ -121,7 +121,7 @@ CONFIG: AppConfig = {
     'best_index_name': 'best_index.pkl',
     'ema_name': 'ema.pkl',
     'rates_dir': './rates/',
-    'training_steps_per_sample': 5
+    'training_steps_per_sample': 10
 }
 game_name = CONFIG['game_name']
 settings = CONFIG[game_name]

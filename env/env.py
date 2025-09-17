@@ -73,7 +73,8 @@ class BaseEnv(gym.Env, ABC):
                 print(f'-----player{index + 1} {players[index].description}-----')
             action = players[index].get_action(self.state, self.last_action, self.player_to_move)
             _, reward, terminated, truncated, _ = self.step(action)
-            self.render()
+            if not silent:
+                self.render()
             if terminated or truncated:
                 outcome = self.winner
                 break
@@ -91,7 +92,8 @@ class BaseEnv(gym.Env, ABC):
                 print(f'-----{player}{players[outcome].description} 获胜-----')
 
     def random_order_play(self, players: Sequence['Player'], silent: bool = False) -> int:
-        """随机一局对弈，先手顺序随机"""
+        """随机一局对弈，先手顺序随机
+        return:玩家编号0或1，-1代表平"""
         n = random.randint(0, 1)
         p1, p2 = players
         current_players = [p1, p2] if n == 0 else [p2, p1]

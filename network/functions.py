@@ -28,10 +28,12 @@ def read_latest_index(env_name: EnvName = game_name) -> int:
         return -1
 
 
-def write_best_index(best_index: int, env_name: EnvName = game_name) -> None:
+def save_best_index(best_index: int, env_name: EnvName = game_name) -> None:
     """保存最佳model的index"""
     folder = os.path.join(CONFIG['data_dir'], env_name)
     os.makedirs(folder, exist_ok=True)
     path = os.path.join(folder, CONFIG['best_index_name'])
     with open(path, "wb") as f:
         pickle.dump(best_index, f)  # type: ignore
+
+

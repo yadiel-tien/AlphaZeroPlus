@@ -14,7 +14,7 @@ from network.network import Net
 from utils.replay import NumpyBuffer
 from utils.types import EnvName
 from .infer_server import InferServer
-from .functions import recv, get_checkpoint_path
+from .functions import recv, get_checkpoint_path, send
 from utils.config import CONFIG, settings
 from utils.logger import get_logger
 from .request import SocketRequest
@@ -100,9 +100,19 @@ class TrainServer(InferServer):
                     self.request_queue.put(SocketRequest(cast(NDArray, data), client_sock))
                 elif isinstance(data, dict) and 'command' in data:
                     if data['command'] == 'fit':  # 训练模型
-                        self.fit(n_collected_samples=data['n_exp'], iteration=data['iteration'])
+                        self.fit(client_sock, n_collected_samples=data['n_exp'], iteration=data['iteration'])
                     elif data['command'] == 'shutdown':  # 关闭整个train server
                         self.shutdown()
+                    elif data['command'] == 'update_eval_model':  # 训练有效，更新推理模型
+                        with self.model_lock:
+                            self.eval_model.load_state_dict(self.fit_model.state_dict())
+                        print(f'Evaluation model updated to {data['iteration']}.')
+                    elif data['command'] == 'restore_fit_model':  # 训练失败，回滚学习模型
+                        self.load_checkpoint(data['best_index'])
+                        path = get_checkpoint_path(self.env_name, data['iteration'])
+                        if os.path.exists(path):
+                            os.remove(path)
+                        print('Fit model restored.')
                     else:
                         print(f'[-] Received unsupported command: {data["command"]}')
                 else:
@@ -117,7 +127,7 @@ class TrainServer(InferServer):
     def socket_name(self) -> str:
         return self._server_sock.getsockname()
 
-    def fit(self, n_collected_samples: int, iteration: int) -> None:
+    def fit(self, sock: socket, n_collected_samples: int, iteration: int) -> None:
         """从buffer中获取数据，训练神经网络"""
 
         start = time.time()
@@ -187,11 +197,11 @@ class TrainServer(InferServer):
         self.scheduler.step()
         # 保存存档
         self.save_checkpoint(iteration)
-        # 更新推理模型
-        with self.model_lock:
-            self.eval_model.load_state_dict(self.fit_model.state_dict())
+
         duration = time.time() - start
         self.logger.info(f"iteration{iteration}:{n_training_steps}轮训练完成，共用时{duration:.2f}秒。")
+        # 通知服务端学习完成，可以进行评估
+        send(sock, 'Fit done!')
 
     def shutdown(self) -> None:
         if self.writer:

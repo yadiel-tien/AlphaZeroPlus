@@ -76,6 +76,7 @@ class ServerHub:
             if name not in self.infers:
                 self.infers[name] = InferServer(model_id, env_name)
                 self.infers[name].start()
+                self.logger.info(f"Infer server model {name} started.")
         return self.infers[name].socket_path
 
     def remove_infer(self, model_name: str) -> None:

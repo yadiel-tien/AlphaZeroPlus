@@ -13,13 +13,30 @@ from utils.mirror import random_mirror_state_ip
 from .request import QueueRequest
 
 
-def require_fit(iteration: int, n_exp: int) -> None:
+def require_fit(iteration: int, n_exp: int) -> str:
     """请求train server更新训练模型"""
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
         s.connect(CONFIG['train_socket_path'])
         payload = {'command': 'fit',
                    'iteration': iteration,
                    'n_exp': n_exp}
+        send(s, payload)
+        return recv(s)
+
+
+def require_update_eval_model(iteration: int) -> None:
+    """训练时要求服务器同步学习模型参数到推理模型"""
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+        s.connect(CONFIG['train_socket_path'])
+        payload = {'command': 'update_eval_model', 'iteration': iteration}
+        send(s, payload)
+
+
+def require_restore_fit_model(best_index: int, iteration: int) -> None:
+    """训练时因学习模型未通过测验，要求其回滚。同步推理模型参数到训练模型"""
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+        s.connect(CONFIG['train_socket_path'])
+        payload = {'command': 'restore_fit_model', 'best_index': best_index, 'iteration': iteration}
         send(s, payload)
 
 

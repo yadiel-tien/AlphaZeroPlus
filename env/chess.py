@@ -84,9 +84,12 @@ class ChineseChess(BaseEnv):
         :param state: (10,9,6)落子后的state
         :param player_just_moved:相对于刚落子玩家来说的结果， 0红1黑
         :return: 1胜，0平，-1负, 2未分胜负"""
-        # 100步未吃子判和
-        if state[0, 0, -1] >= 100:
-            return GameResult.DRAW
+
+        board = state[:, :, 0]
+        if 4 not in board:  # 红帅被杀
+            return GameResult.WIN if player_just_moved == 1 else GameResult.LOSE
+        if 11 not in board:  # 黑帅被杀
+            return GameResult.WIN if player_just_moved == 0 else GameResult.LOSE
 
         # 连将判负
         diffs = []
@@ -98,14 +101,14 @@ class ChineseChess(BaseEnv):
                 and cls.is_check(state, 1 - player_just_moved):
             return GameResult.LOSE
 
-        board = state[:, :, 0]
-        if 4 not in board:  # 红帅被杀
-            return GameResult.WIN if player_just_moved == 1 else GameResult.LOSE
-        if 11 not in board:  # 黑帅被杀
-            return GameResult.WIN if player_just_moved == 0 else GameResult.LOSE
+        # 100步未吃子判和
+        if state[0, 0, -1] >= 100:
+            return GameResult.DRAW
 
-        # 未分胜负
-        return GameResult.ONGOING
+        # 双方都无进攻棋子判和,有则游戏继续
+        if np.isin(state[:, :, 0], [0, 1, 5, 6, 7, 8, 12, 13]).any():
+            return GameResult.ONGOING
+        return GameResult.DRAW
 
     def step(self, action: int) -> tuple[np.ndarray, float, bool, bool, dict]:
         """

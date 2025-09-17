@@ -37,12 +37,15 @@ class AIServer(Player):
             )
         else:
             self.mcts.apply_action(last_action)
-        print(f'before run: root width:{len(self.mcts.root.children)},depth:{self.mcts.root.depth}')
+        if not self.silent:
+            print(f'before run: root width:{len(self.mcts.root.children)},depth:{self.mcts.root.depth}')
         self.mcts.run(self._n_simulation)
-        print(f'after run: root width:{len(self.mcts.root.children)},depth:{self.mcts.root.depth}')
+        if not self.silent:
+            print(f'after run: root width:{len(self.mcts.root.children)},depth:{self.mcts.root.depth}')
         self.pending_action = self.mcts.choose_action()
-        print(f'after choose: root width:{len(self.mcts.root.children)},depth:{self.mcts.root.depth}')
-        print(f'{self.description} win rate: {self.mcts.root.win_rate:.2%}')
+        if not self.silent:
+            print(f'after choose: root width:{len(self.mcts.root.children)},depth:{self.mcts.root.depth}')
+            print(f'{self.description} win rate: {self.mcts.root.win_rate:.2%}')
         self.win_rate = self.mcts.root.win_rate
         self.is_thinking = False
 

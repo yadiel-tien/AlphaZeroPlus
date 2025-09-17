@@ -62,7 +62,7 @@ class InferenceEngine:
             threshold = 8
             max_size = 20
             n_pending = self.infer_queue.qsize()
-            delay = 5e-4 + 3e-4 * n_pending  # 根据queue排队情况，动态调整
+            delay = 8e-4 + 6e-4 * n_pending  # 根据queue排队情况，动态调整
             phase = 'ramp up'
             requests = []
 

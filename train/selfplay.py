@@ -1,6 +1,6 @@
+import os
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import cast
 
 import numpy as np
 from numpy.typing import NDArray
@@ -8,12 +8,15 @@ from tqdm import tqdm
 
 from env.chess import ChineseChess
 from env.functions import get_class
+from inference.functions import get_checkpoint_path
+from player.ai_server import AIServer
 from utils.logger import get_logger
 from utils.replay import NumpyBuffer
 from utils.config import game_name, settings
 from mcts.deepMcts import NeuronMCTS
-from inference.client import require_fit, require_train_server_shutdown
-from network.functions import read_latest_index
+from inference.client import require_fit, require_train_server_shutdown, require_update_eval_model, \
+    require_restore_fit_model
+from network.functions import read_latest_index, save_best_index, read_best_index
 import random
 
 
@@ -24,6 +27,8 @@ class SelfPlayManager:
         self.buffer = NumpyBuffer(500_000, 2048)
         self.buffer.load()
         self.env_class = get_class(game_name)
+        self.best_index = read_best_index()
+        self.pool = ThreadPoolExecutor(self.n_workers)
 
     def run(self, n_games: int) -> None:
         """训练入口
@@ -32,7 +37,7 @@ class SelfPlayManager:
         iteration = 1 if iteration == -1 else iteration + 1
 
         while iteration < settings['max_iters']:
-            self.logger.info(f'Starting selfplay, iteration {iteration}')
+            self.logger.info(f'Starting selfplay, iteration: {iteration}, best index: {self.best_index}.')
             # 先保证buffer足够大
             while self.buffer.size < self.buffer.capacity * 0.4:
                 self.self_play(iteration=iteration, n_games=50)
@@ -42,7 +47,17 @@ class SelfPlayManager:
             data_count = self.self_play(iteration=iteration, n_games=n_games)
 
             # 服务端进行模型训练，并保存参数，升级infer model
-            require_fit(iteration, data_count)
+            done = require_fit(iteration, data_count)
+            print(done)
+
+            # 以防模型还没创建好
+            path = get_checkpoint_path(game_name, iteration=iteration)
+            while not os.path.exists(path):
+                self.logger.info(f'Checkpoint {path} does not exist. Retrying.')
+                time.sleep(1)
+
+            # 评估模型，按结果更新模型
+            self.evaluation(iteration)
 
             # 训练网络，保存网络
             iteration += 1
@@ -56,19 +71,18 @@ class SelfPlayManager:
         # 动态n_simulation,最大到1200
         n_simulation = 200 + iteration * 1000 // settings['max_iters']
 
-        with  ThreadPoolExecutor(self.n_workers) as pool:
-            futures = [pool.submit(self.self_play_worker, n_simulation) for _ in range(n_games)]
-            data_count, win_count, lose_count, draw_count, truncate_count = 0, 0, 0, 0, 0
-            for f in tqdm(as_completed(futures), total=n_games, desc='self playing'):
-                samples, winner = f.result()
-                win_count += winner == 0
-                lose_count += winner == 1
-                draw_count += winner == -1
-                truncate_count += winner == 2
-                data_count += len(samples)
+        futures = [self.pool.submit(self.self_play_worker, n_simulation) for _ in range(n_games)]
+        data_count, win_count, lose_count, draw_count, truncate_count = 0, 0, 0, 0, 0
+        for f in tqdm(as_completed(futures), total=n_games, desc='Self playing'):
+            samples, winner = f.result()
+            win_count += winner == 0
+            lose_count += winner == 1
+            draw_count += winner == -1
+            truncate_count += winner == 2
+            data_count += len(samples)
 
-                for sample in samples:
-                    self.buffer.add(sample)
+            for sample in samples:
+                self.buffer.add(sample)
 
         self.buffer.save()
         # 总结
@@ -98,15 +112,13 @@ class SelfPlayManager:
         samples = []
         while not env.terminated and not env.truncated:
             # Playout Cap Randomization (模拟次数随机化),丰富训练数据的多样性。
-            n_simulation = random.randint(100, n_simulation)
+            n_simulation = random.randint(200, n_simulation)
             mcts.run(n_simulation)  # 模拟
 
             # 采集原始概率分布。象棋需要交换红黑双方位置对应的概率分布
-            pi = mcts.get_pi(1.0)
+            pi_target = mcts.get_pi(1.0)
             if env.player_to_move == 1 and isinstance(env, ChineseChess):
-                pi_target = ChineseChess.switch_side_policy(pi)
-            else:
-                pi_target = pi
+                pi_target = ChineseChess.switch_side_policy(pi_target)
             # 象棋表示state和神经网络state不一样，需要转换。五子棋也进行了接口匹配
             state = env.convert_to_network(env.state, env.player_to_move)
             # q代表对上个玩家的回报，-q代表当前玩家的回报
@@ -114,10 +126,10 @@ class SelfPlayManager:
             samples.append((state, pi_target, -q, env.player_to_move))
 
             # 前期高温，后期低温。根据mcts模拟的概率分布进行落子
-            # temperature = 1.0 if steps < settings['tao_switch_steps'] else 0.2
+            temperature = 1.0 if steps < settings['tao_switch_steps'] else 0.25
             # 临时测试使用固定温度1选择动作
             # temperature = 1.0
-            # pi = mcts.get_pi(temperature)  # 获取mcts的概率分布pi
+            pi = mcts.get_pi(temperature)  # 获取mcts的概率分布pi
             action = np.random.choice(len(pi), p=pi)
             env.step(action)  # 执行落子
             mcts.apply_action(action)  # mcts也要根据action进行对应裁剪
@@ -154,5 +166,40 @@ class SelfPlayManager:
 
         return samples, env.winner
 
+    def evaluation(self, iteration):
+        """评估模型，对战就模型胜率超过55%才更新模型"""
+        start_time = time.time()
+        futures = [self.pool.submit(self.evaluation_worker, iteration) for _ in range(self.n_workers)]
+        win_count, lose_count, draw_count = 0, 0, 0
+        win_rate = 0
+        pbar = tqdm(as_completed(futures), total=self.n_workers, desc='Evaluation',
+                    postfix=f'win_rate: {win_rate:.2%}')
+        for future in pbar:
+            result = future.result()
+            win_count += result == 0
+            lose_count += result == 1
+            draw_count += result == -1
+            win_rate = (win_count + draw_count / 2) / self.n_workers
+            pbar.set_postfix({'win_rate': win_rate})
+
+        self.logger.info(
+            f'Model {iteration} VS {self.best_index}，胜:{win_count},负:{lose_count},平:{draw_count}, 胜率{win_rate:.2%}。')
+        if win_rate >= 0.55:
+            self.best_index = iteration
+            save_best_index(iteration)
+            require_update_eval_model(iteration)
+            self.logger.info(f'更新最佳模型为{iteration}, 评估用时{time.time() - start_time:.2f}秒.')
+        else:
+            self.logger.info(
+                f'最佳模型仍旧为{self.best_index},重新开始训练新模型, 评估用时{time.time() - start_time:.2f}秒.')
+            require_restore_fit_model(best_index=self.best_index, iteration=iteration)
+
+    def evaluation_worker(self, iteration) -> int:
+        """iteration对战最佳模型，随机先手顺序"""
+        env = self.env_class()
+        players = [AIServer(game_name, iteration), AIServer(game_name, self.best_index)]
+        return env.random_order_play(players, True)
+
     def shutdown(self):
+        self.pool.shutdown()
         require_train_server_shutdown()
