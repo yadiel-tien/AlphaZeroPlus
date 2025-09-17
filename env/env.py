@@ -63,10 +63,6 @@ class BaseEnv(gym.Env, ABC):
             player.silent = silent
             player.reset()
 
-        # self.state[3, 4, 0] = -1
-        # self.state[7, 1, 0] = -1
-        # self.state[7, 4, 0] = 5
-
         index = 0
         while True:
             if not silent:

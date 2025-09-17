@@ -16,7 +16,7 @@ from .request import SocketRequest
 
 
 class InferServer(InferenceEngine):
-    def __init__(self, model_id: int, env_name: EnvName, max_listen_workers: int = 32, training=False):
+    def __init__(self, model_id: int, env_name: EnvName, max_listen_workers: int = 100, training=True):
         self.max_listen_workers = max_listen_workers
         self._listen_thread: threading.Thread | None = None
         self._listen_pool: ThreadPoolExecutor | None = None
@@ -30,7 +30,6 @@ class InferServer(InferenceEngine):
         super().start()
         self._listen_thread = threading.Thread(target=self._listen_loop, daemon=True)
         self._listen_thread.start()
-
 
     @property
     def socket_path(self) -> str:

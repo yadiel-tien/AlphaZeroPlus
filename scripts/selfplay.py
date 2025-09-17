@@ -3,12 +3,12 @@ from train.selfplay import SelfPlayManager
 
 
 def main():
-    manager = SelfPlayManager(40)
+    manager = SelfPlayManager(n_workers=40)
 
     register_sigint(manager.shutdown)
 
     try:
-        manager.run(n_games=200)
+        manager.run(n_games=400)
         manager.shutdown()
     except ConnectionError or FileNotFoundError:
         print("Server has been shut down,selfplay stopped!")

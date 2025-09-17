@@ -170,17 +170,15 @@ class SelfPlayManager:
         """评估模型，对战就模型胜率超过55%才更新模型"""
         start_time = time.time()
         futures = [self.pool.submit(self.evaluation_worker, iteration) for _ in range(self.n_workers)]
-        win_count, lose_count, draw_count = 0, 0, 0
-        win_rate = 0
-        pbar = tqdm(as_completed(futures), total=self.n_workers, desc='Evaluation',
-                    postfix=f'win_rate: {win_rate:.2%}')
+        win_count, lose_count, draw_count, win_rate = 0, 0, 0, 0.0
+        pbar = tqdm(as_completed(futures), total=self.n_workers, desc='Evaluation:')
         for future in pbar:
             result = future.result()
             win_count += result == 0
             lose_count += result == 1
             draw_count += result == -1
-            win_rate = (win_count + draw_count / 2) / self.n_workers
-            pbar.set_postfix({'win_rate': win_rate})
+            win_rate = (win_count + draw_count / 2) / (win_count + lose_count + draw_count)
+            pbar.set_postfix({'win_rate': f'{win_rate:.2%}'})
 
         self.logger.info(
             f'Model {iteration} VS {self.best_index}，胜:{win_count},负:{lose_count},平:{draw_count}, 胜率{win_rate:.2%}。')
@@ -197,8 +195,35 @@ class SelfPlayManager:
     def evaluation_worker(self, iteration) -> int:
         """iteration对战最佳模型，随机先手顺序"""
         env = self.env_class()
-        players = [AIServer(game_name, iteration), AIServer(game_name, self.best_index)]
-        return env.random_order_play(players, True)
+        if isinstance(env,ChineseChess):
+            env.random_opening()
+        model_list = [iteration, self.best_index] if random.random() < 0.5 else [self.best_index, iteration]
+        competitors = [NeuronMCTS.make_socket_mcts(
+            env_class=self.env_class,
+            state=env.state,
+            last_action=env.last_action,
+            player_to_move=env.player_to_move,
+            model_id=index
+        ) for index in model_list]
+        while not env.terminated:
+            mcts = competitors[env.player_to_move]
+            mcts.run(300)
+            pi = mcts.get_pi(0.1)
+            action = np.random.choice(len(pi), p=pi)
+            env.step(action)
+            for mcts in competitors:
+                mcts.apply_action(action)
+
+        for mcts in competitors:
+            mcts.shutdown()
+
+        if env.winner == -1:
+            return -1
+        winner = model_list[env.winner]
+        if winner == iteration:
+            return 0
+        else:
+            return 1
 
     def shutdown(self):
         self.pool.shutdown()

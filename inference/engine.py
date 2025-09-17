@@ -170,6 +170,8 @@ class InferenceEngine:
         if self._infer_thread and self._infer_thread.is_alive():
             self._infer_thread.join(timeout=1)
             self._infer_thread = None
+        if self.training:
+            self.transposition_table.clear()
 
     def __del__(self):
         self.shutdown()

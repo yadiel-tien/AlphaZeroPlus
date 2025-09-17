@@ -106,6 +106,8 @@ class TrainServer(InferServer):
                     elif data['command'] == 'update_eval_model':  # 训练有效，更新推理模型
                         with self.model_lock:
                             self.eval_model.load_state_dict(self.fit_model.state_dict())
+                        # 清空缓存
+                        self.clear_flag = True
                         print(f'Evaluation model updated to {data['iteration']}.')
                     elif data['command'] == 'restore_fit_model':  # 训练失败，回滚学习模型
                         self.load_checkpoint(data['best_index'])
@@ -190,8 +192,7 @@ class TrainServer(InferServer):
                 f"Step {step + 1}:\n "
                 f" loss={loss.item():.4f}, policy_loss={policy_loss.item():.4f}, value_loss={value_loss.item():.4f}"
             )
-        # 清空缓存
-        self.clear_flag = True
+
         # 更新学习率调解器
         self.writer.add_scalar('Learning Rate', self.scheduler.get_last_lr()[0], self.total_steps_trained)
         self.scheduler.step()

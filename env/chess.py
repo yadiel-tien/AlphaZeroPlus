@@ -7,6 +7,7 @@ from utils.types import ChessMove, GameResult, PieceMoveFunc
 import numpy as np
 
 from .env import BaseEnv
+from .opening_book import book
 
 settings = CONFIG['ChineseChess']
 
@@ -55,6 +56,10 @@ class ChineseChess(BaseEnv):
         self.state[:, :, :-1] = board[:, :, np.newaxis]
         self.reset_status()
         return self.state, {}
+
+    def random_opening(self):
+        """从预设的开局库中随机选择一个作为开局。开局库为双方各走2步。"""
+        self.state[:, :, 0] = book[np.random.choice(book.shape[0])]
 
     @classmethod
     def virtual_step(cls, state: NDArray[np.int32], action: int) -> NDArray[np.int32]:
