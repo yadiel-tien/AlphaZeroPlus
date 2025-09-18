@@ -8,6 +8,7 @@ import numpy as np
 import torch
 from numpy.typing import NDArray
 
+from utils.logger import get_logger
 from utils.types import EnvName
 from .functions import get_model_name, get_checkpoint_path
 from .request import QueueRequest, SocketRequest
@@ -33,6 +34,7 @@ class InferenceEngine:
         self.running = False
         self.model_lock = threading.Lock()
         self.training = training
+        self.logger = get_logger('inference')
         if self.training:
             # 置换表
             self.transposition_table = OrderedDict()
@@ -89,6 +91,7 @@ class InferenceEngine:
 
     def _inference_loop(self):
         """推理loop，持续不断的接收state，打包，发GPU推理，返回结果"""
+        # start_time = time.time()
         while self.running:
             start = time.time()
             # 收到清空信号重置置换表
@@ -148,6 +151,9 @@ class InferenceEngine:
                 msg = f'{len(miss_list):>2} requests inference took {time.time() - start:.10f} seconds.Pending:{self.infer_queue.qsize():2}.'
                 msg += f' hit rate: {self.hit / (self.total_request + 1) :.2%}, total:{self.total_request}.'
                 print(msg, end='\r')
+                # if time.time() - start_time > 10:
+                #     self.logger.debug(msg)
+                #     start_time = time.time()
 
     def deliver_result(self, requests: list[QueueRequest], probs: Sequence[NDArray], values: Sequence[float]) -> None:
         # 结果交给请求方，通知request继续

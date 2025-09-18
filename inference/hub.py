@@ -3,6 +3,7 @@ import os
 import socket
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 from inference.functions import recv, send, get_model_name
 from inference.infer_server import InferServer
@@ -23,6 +24,7 @@ class ServerHub:
         self.logger = get_logger('hub')
         # 避免多线程同时操作infers造成数据错误
         self.lock = threading.Lock()
+        self.pool = ThreadPoolExecutor(max_workers=100)
 
     def start(self) -> None:
         """启动管理服务"""
@@ -38,12 +40,12 @@ class ServerHub:
         self._socket.settimeout(1)
         self.logger.info(f"Server hub started. Now is listening to {CONFIG['hub_socket_path']}.")
         # 启动状态显示
-        threading.Thread(target=self.show_status, daemon=True).start()
+        self.pool.submit(self.show_status)
 
         while self._running:
             try:
                 conn, _ = self._socket.accept()
-                threading.Thread(target=self.handle_connection, args=(conn,)).start()
+                self.pool.submit(self.handle_connection, conn)
             except socket.timeout:
                 continue
 
@@ -57,8 +59,7 @@ class ServerHub:
                     if data['command'] == 'register':
                         send(conn, self.register(data['env_name'], data['model_id']))
                     elif data['command'] == 'remove':
-                        name = get_model_name(data['env_name'], data['model_id'])
-                        self.remove_infer(name)
+                        self.remove_infer('model_name')
                     elif data['command'] == 'shutdown':
                         self.shutdown()
 
@@ -120,3 +121,5 @@ class ServerHub:
                 infer.shutdown()
             self.infers.clear()
         self.logger.info('Server hub has been shut down!')
+        # 清理线程池
+        self.pool.shutdown()

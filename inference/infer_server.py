@@ -51,7 +51,7 @@ class InferServer(InferenceEngine):
 
         # 用线程池处理连接
         self._listen_pool = ThreadPoolExecutor(self.max_listen_workers)
-        print(f"[+] InferenceServer {self.name} listening at {self.socket_path}")
+        self.logger.info(f"[+] InferenceServer {self.name} listening at {self.socket_path}")
 
     def _listen_loop(self):
         """监听socket发来的请求"""
@@ -62,12 +62,12 @@ class InferServer(InferenceEngine):
                 conn, _ = self._server_sock.accept()
                 with self.connection_lock:
                     self.client_count += 1
-                    print(f'New connection established, total {self.client_count} clients')
+                    self.logger.info(f'New connection established, total {self.client_count} clients')
                 self._listen_pool.submit(self.handle_client, conn)
             except socket.timeout:
                 continue
             except OSError:
-                print(f"[-] InferenceServer {self.name} listen loop was forced to shutdown!")
+                self.logger.info(f"[-] InferenceServer {self.name} listen loop was forced to shutdown!")
                 break
 
     def handle_client(self, client_sock: socket.socket) -> None:
@@ -79,14 +79,14 @@ class InferServer(InferenceEngine):
                 if isinstance(data, np.ndarray):
                     self.request_queue.put(SocketRequest(cast(NDArray, data), client_sock))
                 else:
-                    print(f"[-] InferenceServer {self.name} received unsupported data: {data}")
+                    self.logger.info(f"[-] InferenceServer {self.name} received unsupported data: {data}")
             except socket.timeout:
                 continue
             except ConnectionError:
                 with self.connection_lock:
                     self.client_count -= 1
                     if self.client_count == 0:
-                        require_infer_removal(client_sock)
+                        require_infer_removal(self.name)
                 break
         client_sock.close()
 

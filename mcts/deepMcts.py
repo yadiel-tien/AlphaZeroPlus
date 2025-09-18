@@ -287,7 +287,6 @@ class NeuronMCTS:
         """将不同孩子节点的访问次数转换为概率分布
         :param temperature: 温度控制概率分布的集中程度，越小越集中，当为0集中到一点：时最大访问次数孩子的概率为1，其他都为0；为1时等同访问次数分布"""
         pi_full = np.zeros_like(self.root.child_n, dtype=np.float32)
-
         child_n = self.root.child_n[self.root.valid_actions]
 
         # 计算已扩展子节点的概率

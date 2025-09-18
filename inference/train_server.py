@@ -23,7 +23,7 @@ from .request import SocketRequest
 class TrainServer(InferServer):
     def __init__(self, model_id: int, env_name: EnvName, max_listen_workers: int = 100):
         super().__init__(model_id, env_name, max_listen_workers, training=True)
-        self.logger = get_logger('fit')
+        self.fit_logger = get_logger('fit')
         # 模型
         self.fit_model = Net(self.eval_model.config).to(CONFIG['device'])
         # 优化器和学习率调解器
@@ -49,9 +49,9 @@ class TrainServer(InferServer):
             self.optimizer.load_state_dict(checkpoint['optimizer'])
             self.scheduler.load_state_dict(checkpoint['scheduler'])
             self.total_steps_trained = checkpoint['total_steps_trained']
-            self.logger.info(f'Load checkpoint successfully. Iteration: {iteration}, Step: {self.total_steps_trained}.')
+            self.fit_logger.info(f'Load checkpoint successfully. Iteration: {iteration}, Step: {self.total_steps_trained}.')
         else:
-            self.logger.info(f'Checkpoint {iteration} not found.Starting from raw model.')
+            self.fit_logger.info(f'Checkpoint {iteration} not found.Starting from raw model.')
 
     def save_checkpoint(self, iteration: int) -> None:
         """保存存档"""
@@ -83,7 +83,7 @@ class TrainServer(InferServer):
             except socket.timeout:
                 continue
             except OSError as e:
-                print(f"[-] InferenceServer {self.name} listen loop was forced to shutdown: {e}")
+                self.fit_logger.info(f"[-] InferenceServer {self.name} listen loop was forced to shutdown: {e}")
                 break
             except Exception as e:
                 if not self.running:
@@ -108,17 +108,17 @@ class TrainServer(InferServer):
                             self.eval_model.load_state_dict(self.fit_model.state_dict())
                         # 清空缓存
                         self.clear_flag = True
-                        print(f'Evaluation model updated to {data['iteration']}.')
+                        self.fit_logger.info(f'Evaluation model updated to {data['iteration']}.')
                     elif data['command'] == 'restore_fit_model':  # 训练失败，回滚学习模型
                         self.load_checkpoint(data['best_index'])
                         path = get_checkpoint_path(self.env_name, data['iteration'])
                         if os.path.exists(path):
                             os.remove(path)
-                        print('Fit model restored.')
+                        self.fit_logger.info('Fit model restored.')
                     else:
-                        print(f'[-] Received unsupported command: {data["command"]}')
+                        self.fit_logger.info(f'[-] Received unsupported command: {data["command"]}')
                 else:
-                    print(f'[-] Received unsupported data: {data}')
+                    self.fit_logger.info(f'[-] Received unsupported data: {data}')
             except socket.timeout:
                 continue
             except ConnectionError:  # 对方断开了连接，结束循环
@@ -144,14 +144,14 @@ class TrainServer(InferServer):
             pis = torch.from_numpy(pis).float().to(CONFIG['device'])
             zs = torch.from_numpy(zs).float().to(CONFIG['device'])
             print("\033[K", end='')  # 清空之前的尾行推理信息
-            self.logger.info(
+            self.fit_logger.info(
                 f"real z mean: {torch.mean(zs).item():>7.4f},"
                 f" std:{torch.std(zs).item():>7.4f},"
                 f" q[:3]: {','.join(f'{i.item():>8.4f}' for i in zs[:3])}"
             )
             # 模型前向推理
             policy_logits, values = self.fit_model(states)
-            self.logger.info(
+            self.fit_logger.info(
                 f"pred v mean: {torch.mean(values).item():>7.4f},"
                 f" std:{torch.std(values).item():>7.4f},"
                 f" v[:3]: {','.join(f'{i.item():>8.4f}' for i in values[:3])}"
@@ -188,7 +188,7 @@ class TrainServer(InferServer):
             # 更新计步器
             self.total_steps_trained += 1
 
-            self.logger.info(
+            self.fit_logger.info(
                 f"Step {step + 1}:\n "
                 f" loss={loss.item():.4f}, policy_loss={policy_loss.item():.4f}, value_loss={value_loss.item():.4f}"
             )
@@ -200,7 +200,7 @@ class TrainServer(InferServer):
         self.save_checkpoint(iteration)
 
         duration = time.time() - start
-        self.logger.info(f"iteration{iteration}:{n_training_steps}轮训练完成，共用时{duration:.2f}秒。")
+        self.fit_logger.info(f"iteration{iteration}:{n_training_steps}轮训练完成，共用时{duration:.2f}秒。")
         # 通知服务端学习完成，可以进行评估
         send(sock, 'Fit done!')
 

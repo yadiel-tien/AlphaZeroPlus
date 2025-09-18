@@ -1,4 +1,3 @@
-import os
 import queue
 import threading
 
@@ -7,7 +6,7 @@ import socket
 
 from env.functions import get_class
 from utils.types import EnvName
-from .functions import send, recv, parse_socket_path
+from .functions import send, recv
 from utils.config import CONFIG
 from utils.mirror import random_mirror_state_ip
 from .request import QueueRequest
@@ -69,12 +68,11 @@ def apply_for_socket_path(model_id: int, env_name: str) -> str:
         return socket_path
 
 
-def require_infer_removal(sock: socket.socket) -> None:
+def require_infer_removal(model_name: str) -> None:
     """通知hub移除infer"""
-    env_name, model_id = parse_socket_path(sock.getsockname())
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
         s.connect(CONFIG['hub_socket_path'])
-        payload = {'command': 'remove', 'env_name': env_name, 'model_id': model_id}
+        payload = {'command': 'remove', 'model_name': model_name}
         send(s, payload)
 
 

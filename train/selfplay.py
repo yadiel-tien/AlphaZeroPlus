@@ -1,4 +1,5 @@
 import os
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -9,7 +10,6 @@ from tqdm import tqdm
 from env.chess import ChineseChess
 from env.functions import get_class
 from inference.functions import get_checkpoint_path
-from player.ai_server import AIServer
 from utils.logger import get_logger
 from utils.replay import NumpyBuffer
 from utils.config import game_name, settings
@@ -57,7 +57,7 @@ class SelfPlayManager:
                 time.sleep(1)
 
             # 评估模型，按结果更新模型
-            self.evaluation(iteration)
+            self.evaluation(iteration, n_games=50)
 
             # 训练网络，保存网络
             iteration += 1
@@ -126,9 +126,7 @@ class SelfPlayManager:
             samples.append((state, pi_target, -q, env.player_to_move))
 
             # 前期高温，后期低温。根据mcts模拟的概率分布进行落子
-            temperature = 1.0 if steps < settings['tao_switch_steps'] else 0.25
-            # 临时测试使用固定温度1选择动作
-            # temperature = 1.0
+            temperature = 1.0 if steps < settings['tao_switch_steps'] else 0.2
             pi = mcts.get_pi(temperature)  # 获取mcts的概率分布pi
             action = np.random.choice(len(pi), p=pi)
             env.step(action)  # 执行落子
@@ -166,23 +164,29 @@ class SelfPlayManager:
 
         return samples, env.winner
 
-    def evaluation(self, iteration):
+    def evaluation(self, iteration: int, n_games: int) -> None:
         """评估模型，对战就模型胜率超过55%才更新模型"""
         start_time = time.time()
-        futures = [self.pool.submit(self.evaluation_worker, iteration) for _ in range(self.n_workers)]
+        # 额外提交20%任务，总数达到后停止，避免个别长时间等待
+        stop_signal = threading.Event()
+        futures = [self.pool.submit(self.evaluation_worker, iteration, stop_signal) for _ in range(int(n_games * 1.2))]
         win_count, lose_count, draw_count, win_rate = 0, 0, 0, 0.0
-        pbar = tqdm(as_completed(futures), total=self.n_workers, desc='Evaluation:')
+        # 进度条
+        pbar = tqdm(as_completed(futures), total=n_games, desc=f'{iteration} VS {self.best_index}:')
         for future in pbar:
             result = future.result()
             win_count += result == 0
             lose_count += result == 1
             draw_count += result == -1
-            win_rate = (win_count + draw_count / 2) / (win_count + lose_count + draw_count)
-            pbar.set_postfix({'win_rate': f'{win_rate:.2%}'})
+            completed = win_count + lose_count + draw_count
+            win_rate = (win_count + draw_count / 2) / completed
+            pbar.set_postfix({'win_rate': f'{win_rate:.2%}'})  # 进度条后面添加当前胜率
+            if completed >= n_games:
+                stop_signal.set()
 
         self.logger.info(
             f'Model {iteration} VS {self.best_index}，胜:{win_count},负:{lose_count},平:{draw_count}, 胜率{win_rate:.2%}。')
-        if win_rate >= 0.55:
+        if win_rate >= 0.55:  # 通过测试
             self.best_index = iteration
             save_best_index(iteration)
             require_update_eval_model(iteration)
@@ -192,11 +196,14 @@ class SelfPlayManager:
                 f'最佳模型仍旧为{self.best_index},重新开始训练新模型, 评估用时{time.time() - start_time:.2f}秒.')
             require_restore_fit_model(best_index=self.best_index, iteration=iteration)
 
-    def evaluation_worker(self, iteration) -> int:
-        """iteration对战最佳模型，随机先手顺序"""
+    def evaluation_worker(self, iteration: int, stop_signal: threading.Event) -> int:
+        """iteration对战最佳模型，随机先手顺序。
+        :return 0新模型胜，1老模型胜，-1平"""
         env = self.env_class()
-        if isinstance(env,ChineseChess):
+        # 随机前两步开局，增加随机性
+        if isinstance(env, ChineseChess):
             env.random_opening()
+        # 随机先后手
         model_list = [iteration, self.best_index] if random.random() < 0.5 else [self.best_index, iteration]
         competitors = [NeuronMCTS.make_socket_mcts(
             env_class=self.env_class,
@@ -205,20 +212,23 @@ class SelfPlayManager:
             player_to_move=env.player_to_move,
             model_id=index
         ) for index in model_list]
-        while not env.terminated:
+        # 随机模拟测试
+        n_simulation = random.randint(200, 500)
+        while not env.terminated and not stop_signal.is_set():
             mcts = competitors[env.player_to_move]
-            mcts.run(300)
-            pi = mcts.get_pi(0.1)
+            mcts.run(n_simulation)
+            pi = mcts.get_pi(0.1)  # 不使用argmax，为了增加一点随机性
             action = np.random.choice(len(pi), p=pi)
             env.step(action)
+            # 双方都要对应剪枝
             for mcts in competitors:
                 mcts.apply_action(action)
 
         for mcts in competitors:
             mcts.shutdown()
 
-        if env.winner == -1:
-            return -1
+        if env.winner in (-1, 2):  # 和棋或被提前终止
+            return env.winner
         winner = model_list[env.winner]
         if winner == iteration:
             return 0
