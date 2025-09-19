@@ -25,7 +25,7 @@ class TrainServer(InferServer):
         super().__init__(model_id, env_name, max_listen_workers, training=True)
         self.fit_logger = get_logger('fit')
         # 模型
-        self.fit_model = Net(self.eval_model.config).to(CONFIG['device'])
+        self.fit_model = Net(self.eval_model.config, eval_model=False)
         # 优化器和学习率调解器
         self.optimizer = torch.optim.Adam(self.fit_model.parameters(), lr=1e-3, weight_decay=1e-4)
         self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer=self.optimizer,
@@ -49,7 +49,8 @@ class TrainServer(InferServer):
             self.optimizer.load_state_dict(checkpoint['optimizer'])
             self.scheduler.load_state_dict(checkpoint['scheduler'])
             self.total_steps_trained = checkpoint['total_steps_trained']
-            self.fit_logger.info(f'Load checkpoint successfully. Iteration: {iteration}, Step: {self.total_steps_trained}.')
+            self.fit_logger.info(
+                f'Load checkpoint successfully. Iteration: {iteration}, Step: {self.total_steps_trained}.')
         else:
             self.fit_logger.info(f'Checkpoint {iteration} not found.Starting from raw model.')
 
@@ -106,6 +107,7 @@ class TrainServer(InferServer):
                     elif data['command'] == 'update_eval_model':  # 训练有效，更新推理模型
                         with self.model_lock:
                             self.eval_model.load_state_dict(self.fit_model.state_dict())
+                            self.model_index = data['iteration']
                         # 清空缓存
                         self.clear_flag = True
                         self.fit_logger.info(f'Evaluation model updated to {data['iteration']}.')
@@ -131,7 +133,6 @@ class TrainServer(InferServer):
 
     def fit(self, sock: socket, n_collected_samples: int, iteration: int) -> None:
         """从buffer中获取数据，训练神经网络"""
-
         start = time.time()
         # 加载最新buffer
         self.buffer.load()

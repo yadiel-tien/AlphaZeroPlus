@@ -43,11 +43,12 @@ class SelfPlayManager:
                 self.self_play(iteration=iteration, n_games=50)
                 self.logger.info(f'Collecting data.Current buffer size: {self.buffer.size}.')
 
-            # 开始selfplay
-            data_count = self.self_play(iteration=iteration, n_games=n_games)
+            # 开始selfplay。新数据会进行积累，直到新模型产生。
+
+            n_data = self.self_play(iteration=iteration, n_games=n_games)
 
             # 服务端进行模型训练，并保存参数，升级infer model
-            done = require_fit(iteration, data_count)
+            done = require_fit(iteration, n_data)
             print(done)
 
             # 以防模型还没创建好
@@ -69,12 +70,14 @@ class SelfPlayManager:
 
         start = time.time()
         # 动态n_simulation,最大到1200
-        n_simulation = 200 + iteration * 1000 // settings['max_iters']
-
-        futures = [self.pool.submit(self.self_play_worker, n_simulation) for _ in range(n_games)]
-        data_count, win_count, lose_count, draw_count, truncate_count = 0, 0, 0, 0, 0
+        n_simulation = 200 + iteration * 600 // settings['max_iters']
+        stop_signal = threading.Event()
+        futures = [self.pool.submit(self.self_play_worker, n_simulation, stop_signal) for _ in
+                   range(n_games + self.n_workers // 2)]
+        data_count, win_count, lose_count, draw_count, truncate_count, completed = 0, 0, 0, 0, 0, 0
         for f in tqdm(as_completed(futures), total=n_games, desc='Self playing'):
             samples, winner = f.result()
+            completed += 1
             win_count += winner == 0
             lose_count += winner == 1
             draw_count += winner == -1
@@ -83,20 +86,23 @@ class SelfPlayManager:
 
             for sample in samples:
                 self.buffer.add(sample)
+            if win_count + lose_count + draw_count >= n_games:
+                stop_signal.set()
+                break
 
         self.buffer.save()
         # 总结
         duration = time.time() - start
         self.logger.info(
-            f'selfplay {n_games}局游戏，每步模拟{n_simulation}次，收集到原始数据{data_count}条,\n'
-            f'win rate:{win_count / n_games:.2%},lose rate:{lose_count / n_games:.2%},'
-            f'draw rate:{draw_count / n_games :.2%},truncate rate:{truncate_count / n_games :.2%}。')
+            f'selfplay {completed}局游戏，每步模拟{n_simulation}次，收集到原始数据{data_count}条,\n'
+            f'win rate:{win_count / completed:.2%},lose rate:{lose_count / completed:.2%},'
+            f'draw rate:{draw_count / completed :.2%},truncate rate:{truncate_count / completed :.2%}。')
         self.logger.info(
-            f'总用时{duration:.2f}秒, 平均步数{data_count / n_games:.2f}, 平均每条数据用时{(duration / data_count) if data_count else float('inf'):.4f}秒。'
+            f'总用时{duration:.2f}秒, 平均步数{data_count / completed:.2f}, 平均每条数据用时{(duration / data_count) if data_count else float('inf'):.4f}秒。'
         )
         return data_count
 
-    def self_play_worker(self, n_simulation: int) -> tuple[list[
+    def self_play_worker(self, n_simulation: int, stop_signal: threading.Event) -> tuple[list[
         tuple[NDArray, NDArray, float]], int]:
         """进行一局游戏，收集经验
         :return [(state,pi_move,q),...],winner.winner0,1代表获胜玩家，-1代表平局"""
@@ -112,7 +118,7 @@ class SelfPlayManager:
         samples = []
         while not env.terminated and not env.truncated:
             # Playout Cap Randomization (模拟次数随机化),丰富训练数据的多样性。
-            n_simulation = random.randint(200, n_simulation)
+            # n_simulation = random.randint(200, n_simulation)
             mcts.run(n_simulation)  # 模拟
 
             # 采集原始概率分布。象棋需要交换红黑双方位置对应的概率分布
@@ -142,7 +148,15 @@ class SelfPlayManager:
             #     if no_capture_count > 30 or steps > 150:
             #         break
 
+            # 收到停止信号，截断游戏
+            if stop_signal.is_set():
+                env.truncated = True
+
         mcts.shutdown()
+
+        # 截断的不收集数据
+        if env.truncated:
+            return [], env.winner
 
         env.render()
         print(f'winner: {env.winner},steps: {steps}')
@@ -169,7 +183,8 @@ class SelfPlayManager:
         start_time = time.time()
         # 额外提交20%任务，总数达到后停止，避免个别长时间等待
         stop_signal = threading.Event()
-        futures = [self.pool.submit(self.evaluation_worker, iteration, stop_signal) for _ in range(int(n_games * 1.2))]
+        futures = [self.pool.submit(self.evaluation_worker, iteration, stop_signal) for _ in
+                   range(n_games + self.n_workers // 2)]
         win_count, lose_count, draw_count, win_rate = 0, 0, 0, 0.0
         # 进度条
         pbar = tqdm(as_completed(futures), total=n_games, desc=f'{iteration} VS {self.best_index}:')
@@ -183,6 +198,7 @@ class SelfPlayManager:
             pbar.set_postfix({'win_rate': f'{win_rate:.2%}'})  # 进度条后面添加当前胜率
             if completed >= n_games:
                 stop_signal.set()
+                break
 
         self.logger.info(
             f'Model {iteration} VS {self.best_index}，胜:{win_count},负:{lose_count},平:{draw_count}, 胜率{win_rate:.2%}。')
@@ -214,15 +230,18 @@ class SelfPlayManager:
         ) for index in model_list]
         # 随机模拟测试
         n_simulation = random.randint(200, 500)
-        while not env.terminated and not stop_signal.is_set():
+        while not env.terminated and not env.truncated:
             mcts = competitors[env.player_to_move]
             mcts.run(n_simulation)
-            pi = mcts.get_pi(0.1)  # 不使用argmax，为了增加一点随机性
-            action = np.random.choice(len(pi), p=pi)
+            action = int(np.argmax(mcts.root.child_n))
+            # pi = mcts.get_pi(0.1)  # 不使用argmax，为了增加一点随机性
+            # action = np.random.choice(len(pi), p=pi)
             env.step(action)
             # 双方都要对应剪枝
             for mcts in competitors:
                 mcts.apply_action(action)
+            if stop_signal.is_set():
+                env.truncated = True
 
         for mcts in competitors:
             mcts.shutdown()

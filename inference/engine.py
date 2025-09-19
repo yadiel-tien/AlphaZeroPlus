@@ -10,7 +10,7 @@ from numpy.typing import NDArray
 
 from utils.logger import get_logger
 from utils.types import EnvName
-from .functions import get_model_name, get_checkpoint_path
+from .functions import get_checkpoint_path, get_model_name
 from .request import QueueRequest, SocketRequest
 from utils.config import CONFIG
 from network.network import Net
@@ -21,10 +21,8 @@ class InferenceEngine:
         # 推理model
         model_path = get_checkpoint_path(env_name, model_index)
         self.eval_model, success, = Net.load_from_checkpoint(model_path, eval_model=True)
-        if not success:
-            model_index = -1
+        self.model_index = model_index if success else -1
         self.env_name = env_name
-        self.name = get_model_name(env_name, model_index)
         # 负责单个request的发送接收
         self.request_queue: queue.Queue[QueueRequest | SocketRequest] = queue.Queue()
         self._request_thread: threading.Thread | None = None
@@ -38,10 +36,14 @@ class InferenceEngine:
         if self.training:
             # 置换表
             self.transposition_table = OrderedDict()
-            self.tt_max_size = 500_000
+            self.tt_max_size = 200_000
             self.hit = 0
             self.total_request = 0
             self.clear_flag = False
+
+    @property
+    def name(self):
+        return get_model_name(self.env_name, self.model_index)
 
     def make_chinese_chess_state_key(self, state: NDArray) -> bytes:
         """供置换表使用"""

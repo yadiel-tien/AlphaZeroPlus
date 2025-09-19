@@ -3,6 +3,7 @@ from typing import TypeAlias, Literal, cast
 
 import pygame
 
+from env.chess import ChineseChess
 from env.env import BaseEnv
 from player.ai_client import AIClient
 from .button import Button
@@ -99,6 +100,8 @@ class GameUI(ABC):
             self.env.reset()
             for timer in self.timers.values():
                 timer.reset()
+        # if isinstance(self.env, ChineseChess):
+        #     self.env.random_opening()
         self.history = []
         self.status = 'playing'
         # 重设玩家

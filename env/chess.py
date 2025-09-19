@@ -96,7 +96,7 @@ class ChineseChess(BaseEnv):
         if 11 not in board:  # 黑帅被杀
             return GameResult.WIN if player_just_moved == 0 else GameResult.LOSE
 
-        # 连将判负，其他循环判和。
+        # 连将判负
         diffs = []
         for i in range(5):
             diffs.append(np.equal(state[:, :, i], state[:, :, i + 1]))
@@ -105,8 +105,6 @@ class ChineseChess(BaseEnv):
                 and np.array_equal(diffs[1], diffs[3]):
             if cls.is_check(state, 1 - player_just_moved):
                 return GameResult.LOSE
-            else:
-                return GameResult.DRAW
 
         # 100步未吃子判和
         if state[0, 0, -1] >= 100:

@@ -2,7 +2,6 @@ import datetime
 import os
 import socket
 import threading
-import time
 from concurrent.futures import ThreadPoolExecutor
 
 from inference.functions import recv, send, get_model_name
@@ -20,7 +19,7 @@ class ServerHub:
         self._socket = None
         # name:infer形式存储，可以让不同应用共享infer
         self.infers: dict[str, InferServer] = {}
-        self._running = False
+        self.stop_event = threading.Event()
         self.logger = get_logger('hub')
         # 避免多线程同时操作infers造成数据错误
         self.lock = threading.Lock()
@@ -28,9 +27,6 @@ class ServerHub:
 
     def start(self) -> None:
         """启动管理服务"""
-        if self._running:
-            return
-        self._running = True
         # 建立socket服务，地址在config中配置
         self._clean_socket()
         self._socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -42,7 +38,7 @@ class ServerHub:
         # 启动状态显示
         self.pool.submit(self.show_status)
 
-        while self._running:
+        while not self.stop_event.is_set():
             try:
                 conn, _ = self._socket.accept()
                 self.pool.submit(self.handle_connection, conn)
@@ -59,7 +55,7 @@ class ServerHub:
                     if data['command'] == 'register':
                         send(conn, self.register(data['env_name'], data['model_id']))
                     elif data['command'] == 'remove':
-                        self.remove_infer('model_name')
+                        self.remove_infer(data['model_name'])
                     elif data['command'] == 'shutdown':
                         self.shutdown()
 
@@ -92,14 +88,13 @@ class ServerHub:
 
     def show_status(self):
         """定期显示连接数量"""
-        while self._running:
+        while not self.stop_event.wait(30):
             title = 'Connection Status'
             print(f'{title:-^70}')
             with self.lock:
                 for name, infer in self.infers.items():
                     print(f'{name}: {infer.client_count} clients')
             print(f'{datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"):-^70}')
-            time.sleep(30)
 
     @staticmethod
     def _clean_socket() -> None:
@@ -109,7 +104,7 @@ class ServerHub:
 
     def shutdown(self):
         """清理资源"""
-        self._running = False
+        self.stop_event.set()
         # 关闭socket
         if self._socket:
             self._socket.close()
@@ -120,6 +115,6 @@ class ServerHub:
             for infer in self.infers.values():
                 infer.shutdown()
             self.infers.clear()
-        self.logger.info('Server hub has been shut down!')
         # 清理线程池
         self.pool.shutdown()
+        self.logger.info('Server hub has been shut down!')
