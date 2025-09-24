@@ -129,10 +129,10 @@ class Gomoku(BaseEnv):
         return []
 
     def render(self) -> None:
-        self.render_fn(self.state, self.player_to_move)
+        print(self.get_board_str(self.state, self.player_to_move))
 
     @classmethod
-    def render_fn(cls, state: NDArray, player_to_move: int) -> None:
+    def get_board_str(cls, state: NDArray, player_to_move: int) -> str:
         """打印棋盘"""
         board_str = '\n'
         col_indices = [str(i + 1) for i in range(cls.shape[1])]
@@ -148,11 +148,11 @@ class Gomoku(BaseEnv):
         board_str = re.sub(r'\bX\b', '\033[31mX\033[0m', board_str)
         # 用蓝色显示玩家 2 的棋子 (2)
         board_str = re.sub(r'\bO\b', '\033[34mO\033[0m', board_str)
-        print(board_str)
+        return board_str
 
     @classmethod
     def handle_human_input(cls, state: NDArray, last_action: int, player_to_move: int) -> int:
-        cls.render_fn(state, player_to_move)
+        cls.get_board_str(state, player_to_move)
         valid_actions = cls.get_valid_actions(state, player_to_move)
         while True:
             while True:

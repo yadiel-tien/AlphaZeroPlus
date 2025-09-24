@@ -15,7 +15,10 @@ class MCTSPlayer(Player):
         self.mcts: MCTS | None = None
         self._thread: threading.Thread | None = None
         self._n_simulation = n_simulation
-        self.description = 'MCTS'
+
+    @property
+    def description(self) -> str:
+        return 'MCTS'
 
     def get_action(self, state: NDArray, last_action: int, player_to_move: int) -> int:
         print('思考中...')

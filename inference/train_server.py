@@ -11,7 +11,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 from network.functions import read_latest_index
 from network.network import Net
-from utils.replay import NumpyBuffer
+from utils.replay import ReplayBuffer
 from utils.types import EnvName
 from .infer_server import InferServer
 from .functions import recv, get_checkpoint_path, send
@@ -33,7 +33,7 @@ class TrainServer(InferServer):
         # 训练步数计数器
         self.total_steps_trained = 0
         # buffer
-        self.buffer = NumpyBuffer(500_000, 2048)
+        self.buffer = ReplayBuffer(500_000, 2048)
         # 加载最新存档
         self.load_checkpoint(read_latest_index(self.env_name))
         # 可视化记录
@@ -112,11 +112,11 @@ class TrainServer(InferServer):
                         self.clear_flag = True
                         self.fit_logger.info(f'Evaluation model updated to {data['iteration']}.')
                     elif data['command'] == 'restore_fit_model':  # 训练失败，回滚学习模型
-                        self.load_checkpoint(data['best_index'])
+                        # self.load_checkpoint(data['best_index'])
                         path = get_checkpoint_path(self.env_name, data['iteration'])
                         if os.path.exists(path):
                             os.remove(path)
-                        self.fit_logger.info('Fit model restored.')
+                        self.fit_logger.info(f'Model{data['iteration']} does not pass evaluation, checkpoint was deleted.')
                     else:
                         self.fit_logger.info(f'[-] Received unsupported command: {data["command"]}')
                 else:

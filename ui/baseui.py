@@ -35,6 +35,11 @@ class GameUI(ABC):
         self.cursor_grid: tuple[int, int] | None = None
         self.settings = {}
 
+    @property
+    def is_view_flipped(self) -> bool:
+        return False
+        # return isinstance(self.players[1], Human) and not isinstance(self.players[0], Human)
+
     def handle_input(self, event: pygame.event.Event) -> None:
         if self.status == 'playing':
             player = self.players[self.env.player_to_move]
@@ -59,6 +64,11 @@ class GameUI(ABC):
             if action != -1:
                 self.history.append((action, self.env.player_to_move))
                 self.env.step(action)
+                # 临时添加，后期在step中进行
+                if isinstance(self.env, ChineseChess):
+                    if ChineseChess.is_checkmate(self.env.state, self.env.player_to_move):
+                        self.env.winner = 1 - self.env.player_to_move
+                        self.env.terminated = True
                 self.play_place_sound(action)
                 player.pending_action = -1
                 if self.env.terminated or self.env.truncated:
@@ -137,7 +147,7 @@ class GameUI(ABC):
 
     def draw_player(self):
         self.timers[self.env.player_to_move].update()
-        desc_vertical_positions = [740, 60]
+        desc_vertical_positions = [60, 740] if self.is_view_flipped else [740, 60]
         sides = ["Red", "Black"]
         for i, player in enumerate(self.players):
             time_remain = self.timers[i].remain // 1000
@@ -146,8 +156,8 @@ class GameUI(ABC):
             desc_rect = desc.get_rect(center=(300, desc_vertical_positions[i]))
             self.screen.blit(desc, desc_rect.topleft)
 
-            if isinstance(player, AIClient):
-                win_rate = cast(AIClient, player).win_rate
+            if hasattr(player, 'win_rate'):
+                win_rate = player.win_rate
                 font = pygame.font.Font(None, 30)
                 win_rate_label = font.render(f'win rate:{win_rate:.2%} ', True, 'gray')
                 self.screen.blit(win_rate_label, (220, desc_rect.bottom + 10))

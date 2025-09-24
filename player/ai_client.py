@@ -15,15 +15,18 @@ from utils.config import CONFIG
 class AIClient(Player):
     def __init__(self, model_idx: int, env_name: EnvName) -> None:
         super().__init__(env_name)
-        self.model_idx = model_idx
+        self.model_id = model_idx
         self.pid = ''
-        self.description = f'AI({model_idx})'
         self.time_stamp = 0
         self.session = requests.Session()
         self.request_setup()
         self.alive = True
         self.win_rate = 0.5
         threading.Thread(target=self._heartbeat_loop, daemon=True).start()
+
+    @property
+    def description(self) -> str:
+        return f'AI({self.model_id})'
 
     def update(self, env: BaseEnv) -> None:
         """负责启动推理线程"""
@@ -46,13 +49,15 @@ class AIClient(Player):
 
         self.pending_action = response.get('action')
         self.win_rate = response.get('win_rate')
+        self.model_id = response.get('model_id')
         self.is_thinking = False
 
     def request_reset(self) -> None:
         """告知server重置"""
         url = CONFIG['base_url'] + 'reset'
         payload = {'pid': self.pid}
-        self.post_request(url, payload)
+        response = self.post_request(url, payload)
+        self.win_rate = response.get('win_rate')
 
     def _heartbeat_loop(self):
         while self.alive:
@@ -70,7 +75,7 @@ class AIClient(Player):
     def request_setup(self) -> None:
         """告知server创建推理引擎"""
         url = CONFIG['base_url'] + 'setup'
-        payload = {'model_id': self.model_idx, 'env_class': self.env_class.__name__}
+        payload = {'model_id': self.model_id, 'env_class': self.env_class.__name__}
         response = self.post_request(url, payload)
         self.pid = response.get('pid')
 
@@ -112,7 +117,6 @@ class AIClient(Player):
     def reset(self) -> None:
         self.request_reset()
         super().reset()
-        self.win_rate = 0.5
 
     def shutdown(self) -> None:
         self.alive = False

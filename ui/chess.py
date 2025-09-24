@@ -1,6 +1,8 @@
 from typing import TypeAlias, Literal, cast
 
+import numpy as np
 import pygame
+from numpy.typing import NDArray
 
 from .baseui import GameUI
 from utils.config import GameConfig, CONFIG
@@ -31,6 +33,17 @@ class ChineseChessUI(GameUI):
         self.check_buffer = {'action': -1, 'checkmate': False, 'check': False}
         self.safe_move_cache: dict[int, bool] = {}
 
+
+
+    @property
+    def human_perspective_state(self) -> NDArray:
+        """尽量保持人类玩家在屏幕下方"""
+        return np.flipud(np.fliplr(self.env.state)) if self.is_view_flipped else self.env.state
+
+    def human_perspective_pos(self, grid: tuple[int, int]) -> tuple[int, int]:
+        """根据人类视角变换点"""
+        return (9 - grid[0], 8 - grid[1]) if self.is_view_flipped else grid
+
     def init_resource(self) -> None:
         """加载棋子和标记图片"""
         for i in range(14):
@@ -52,7 +65,7 @@ class ChineseChessUI(GameUI):
 
         if self.selected_pos:  # 已选择棋子
             # 根据已选择棋子和目标位置生成动作
-            move = self.selected_pos + player.selected_grid
+            move = self.human_perspective_pos(self.selected_pos) + self.human_perspective_pos(player.selected_grid)
             action = self.env.move2action(move)
             if action in self.env.valid_actions:
                 player.pending_action = action
@@ -61,7 +74,7 @@ class ChineseChessUI(GameUI):
             self.selected_pos = None
         else:
             # 选择棋子
-            chosen_piece = self.env.state[player.selected_grid + (0,)]
+            chosen_piece = self.env.state[self.human_perspective_pos(player.selected_grid) + (0,)]
             if chosen_piece == -1:
                 return
             is_red_piece = (0 <= chosen_piece < 7)
@@ -76,7 +89,7 @@ class ChineseChessUI(GameUI):
     def refresh_save_move_cache(self, pos: tuple[int, int]) -> None:
         """根据选中棋子刷新缓存"""
         self.safe_move_cache.clear()
-        valid_actions = self.env.get_valid_action_from_pos(pos)
+        valid_actions = self.env.get_valid_action_from_pos(self.human_perspective_pos(pos))
         for action in valid_actions:
             # 如果执行这步棋后，自己被将军则标记unsafe，但是已经胜利除外
             new_state = self.env.virtual_step(self.env.state, action)
@@ -137,7 +150,7 @@ class ChineseChessUI(GameUI):
         """绘制棋子"""
         for row in range(10):
             for col in range(9):
-                piece = int(self.env.state[row, col, 0])
+                piece = int(self.human_perspective_state[row, col, 0])
                 if piece != -1 and (row, col) != self.selected_pos:
                     x, y = self._grid2pos((row, col))
                     pic = self.piece_pics[piece]
@@ -148,7 +161,7 @@ class ChineseChessUI(GameUI):
         """选中的棋子周围绘制绿色圆圈"""
         if self.selected_pos:
             row, col = self.selected_pos
-            piece = int(self.env.state[row, col, 0])
+            piece = int(self.human_perspective_state[row, col, 0])
             piece_pic = self.piece_pics[piece]
             x, y = self._grid2pos((row, col))
             rect = piece_pic.get_rect(topleft=(x, y))
@@ -163,8 +176,8 @@ class ChineseChessUI(GameUI):
         if self.history:
             action, _ = self.history[-1]
             r, c, tr, tc = self.env.action2move(action)
-            x, y = self._grid2pos((r, c))
-            tx, ty = self._grid2pos((tr, tc))
+            x, y = self._grid2pos(self.human_perspective_pos((r, c)))
+            tx, ty = self._grid2pos(self.human_perspective_pos((tr, tc)))
             self.screen.blit(self.mark_pics['blue_dot'], (x, y))
             self.screen.blit(self.mark_pics['blue_circle'], (tx, ty))
 
@@ -173,7 +186,7 @@ class ChineseChessUI(GameUI):
         if self.selected_pos:
             for action, is_safe in self.safe_move_cache.items():
                 _, _, tr, tc = self.env.action2move(action)
-                x, y = self._grid2pos((tr, tc))
+                x, y = self._grid2pos(self.human_perspective_pos((tr, tc)))
                 if is_safe:
                     self.screen.blit(self.mark_pics['green_dot'], (x, y))
                 else:

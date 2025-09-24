@@ -7,7 +7,6 @@ from utils.types import ChessMove, GameResult, PieceMoveFunc
 import numpy as np
 
 from .env import BaseEnv
-from .opening_book import book
 
 settings = CONFIG['ChineseChess']
 
@@ -56,10 +55,6 @@ class ChineseChess(BaseEnv):
         self.state[:, :, :-1] = board[:, :, np.newaxis]
         self.reset_status()
         return self.state, {}
-
-    def random_opening(self):
-        """从预设的开局库中随机选择一个作为开局。开局库为双方各走2步。"""
-        self.state[:, :, 0] = book[np.random.choice(book.shape[0])]
 
     @classmethod
     def virtual_step(cls, state: NDArray[np.int32], action: int) -> NDArray[np.int32]:
@@ -323,27 +318,27 @@ class ChineseChess(BaseEnv):
             cls.dest_func[i] = cls.dest_func[i - 7]
 
     @classmethod
-    def render_fn(cls, state: NDArray) -> None:
+    def get_board_str(cls, state: NDArray, colorize: bool = True) -> str:
         """打印棋盘"""
         board_str = '\n ' + ''.join([f'{i:^5}' for i in range(9)]) + '\n'
         for i, row in enumerate(state[:, :, 0]):
             row_str = f'{i}'
             for piece_id in row:
                 ch = cls.id2piece[int(piece_id)]
-                if 0 <= piece_id <= 6:
+                if 0 <= piece_id <= 6 and colorize:
                     row_str += f' \033[91m{ch:2}\033[0m'
                 else:
                     row_str += f' {ch:2}'
             board_str += row_str + '\n'
 
-        print(board_str)
+        return board_str
 
     def render(self) -> None:
-        self.render_fn(self.state)
+        print(self.get_board_str(self.state))
 
     @classmethod
     def handle_human_input(cls, state: NDArray, last_action: int, player_to_move: int) -> int:
-        cls.render_fn(state)
+        cls.get_board_str(state)
         valid_actions = cls.get_valid_actions(state, player_to_move)
         while True:
             txt = input('输入一个4位数字，前两位代表当前棋子位置，后两位代表移动到的位置，例如红方炮7平4为7774。\n')

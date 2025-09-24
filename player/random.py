@@ -8,5 +8,9 @@ class RandomPlayer(Player):
     def __init__(self, env_name: EnvName) -> None:
         super().__init__(env_name)
 
+    @property
+    def description(self) -> str:
+        return 'Random Player'
+
     def get_action(self, state: NDArray, last_action: int, player_to_move: int) -> int:
         return random.choice(self.env_class.get_valid_actions(state, player_to_move))

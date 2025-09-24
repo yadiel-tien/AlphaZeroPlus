@@ -4,6 +4,7 @@ import socket
 import threading
 from concurrent.futures import ThreadPoolExecutor
 
+from inference.engine import InferenceEngine
 from inference.functions import recv, send, get_model_name
 from inference.infer_server import InferServer
 from network.functions import read_latest_index
@@ -71,9 +72,14 @@ class ServerHub:
         name = get_model_name(env_name, model_id)
         with self.lock:
             if name not in self.infers:
-                self.infers[name] = InferServer(model_id, env_name)
-                self.infers[name].start()
-                self.logger.info(f"Infer server model {name} started.")
+                infer = InferServer(model_id, env_name)
+                # infer.name可能不等于name，如果其已存在直接返回
+                if infer.name not in self.infers:
+                    self.infers[infer.name] = infer
+                    self.infers[infer.name].start()
+                    self.logger.info(f"Infer server model {infer.name} started.")
+                return self.infers[infer.name].socket_path
+
         return self.infers[name].socket_path
 
     def remove_infer(self, model_name: str) -> None:

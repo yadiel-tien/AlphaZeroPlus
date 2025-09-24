@@ -1,6 +1,7 @@
 import os
 import threading
 from typing import cast, Sequence
+
 from numpy.typing import NDArray
 
 import socket

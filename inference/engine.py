@@ -1,7 +1,7 @@
 import queue
 import threading
 import time
-from collections import OrderedDict
+from lru import LRU
 from typing import Sequence
 
 import numpy as np
@@ -35,8 +35,7 @@ class InferenceEngine:
         self.logger = get_logger('inference')
         if self.training:
             # 置换表
-            self.transposition_table = OrderedDict()
-            self.tt_max_size = 200_000
+            self.transposition_table = LRU(200_000)
             self.hit = 0
             self.total_request = 0
             self.clear_flag = False
@@ -45,9 +44,12 @@ class InferenceEngine:
     def name(self):
         return get_model_name(self.env_name, self.model_index)
 
-    def make_chinese_chess_state_key(self, state: NDArray) -> bytes:
+    def make_state_key(self, state: NDArray) -> bytes:
         """供置换表使用"""
-        arr = (state[:, :, :14] > 0.5).astype(np.uint8)  # 保证0/1
+        if self.env_name == "ChineseChess":
+            arr = (state[:, :, :14] > 0.5).astype(np.uint8)  # 保证0/1
+        else:
+            arr = state.astype(np.uint8)
         return arr.tobytes()
 
     def start(self) -> None:
@@ -93,7 +95,6 @@ class InferenceEngine:
 
     def _inference_loop(self):
         """推理loop，持续不断的接收state，打包，发GPU推理，返回结果"""
-        # start_time = time.time()
         while self.running:
             start = time.time()
             # 收到清空信号重置置换表
@@ -114,12 +115,10 @@ class InferenceEngine:
                 miss_list = []
                 for request in requests:
                     self.total_request += 1
-                    key = self.make_chinese_chess_state_key(request.state)
+                    key = self.make_state_key(request.state)
                     if key in self.transposition_table:  # 命中
                         policy, value = self.transposition_table[key]
                         self.deliver_one(request, policy, value)
-                        # LRU
-                        self.transposition_table.move_to_end(key)
                         self.hit += 1
                     else:
                         miss_list.append(request)
@@ -144,18 +143,12 @@ class InferenceEngine:
             # 更新缓存
             if self.training:
                 for request, prob, value in zip(miss_list, probs, values):
-                    key = self.make_chinese_chess_state_key(request.state)
-                    self.transposition_table[key] = (prob, value)
-                # LRU清理旧缓存
-                while len(self.transposition_table) > self.tt_max_size:
-                    self.transposition_table.popitem(last=False)
+                    key = self.make_state_key(request.state)
+                    self.transposition_table[key] = (prob.copy(), float(value))
 
                 msg = f'{len(miss_list):>2} requests inference took {time.time() - start:.10f} seconds.Pending:{self.infer_queue.qsize():2}.'
                 msg += f' hit rate: {self.hit / (self.total_request + 1) :.2%}, total:{self.total_request}.'
                 print(msg, end='\r')
-                # if time.time() - start_time > 10:
-                #     self.logger.debug(msg)
-                #     start_time = time.time()
 
     def deliver_result(self, requests: list[QueueRequest], probs: Sequence[NDArray], values: Sequence[float]) -> None:
         # 结果交给请求方，通知request继续
@@ -180,6 +173,14 @@ class InferenceEngine:
             self._infer_thread = None
         if self.training:
             self.transposition_table.clear()
+
+        # 尝试强制释放 numpy 内存回 OS,否则置换表的内存无法回收
+        try:
+            import ctypes
+            libc = ctypes.CDLL("libc.so.6")
+            libc.malloc_trim(0)
+        except Exception as e:
+            print("malloc_trim not available:", e)
 
     def __del__(self):
         self.shutdown()

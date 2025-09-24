@@ -65,7 +65,10 @@ def make_move(data: Any) -> Any:
         player_to_move = data['player_to_move']
         action = player.get_action(state, last_action, player_to_move)
         win_rate = float(player.win_rate)
-        return jsonify({"status": "success", "action": action, 'win_rate': win_rate})
+        return jsonify({"status": "success",
+                        "action": action,
+                        'win_rate': win_rate,
+                        'model_id': player.model_id})
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": f'Failed to make move:{e}'}), 400
@@ -84,7 +87,7 @@ def reset(data: Any) -> Any:
             player = ai_players[pid]
 
         player.reset()
-        return jsonify({"status": 'success'})
+        return jsonify({"status": 'success', "win_rate": player.win_rate})
     except Exception as e:
         return jsonify({"error": f'Failed to reset:{e}'}), 400
 
@@ -101,7 +104,7 @@ def heartbeat(data: Any) -> Any:
             clients_live_time[pid] = time.time()
             player = ai_players[pid]
 
-        return jsonify({"status": 'success','win_rate':float( player.win_rate)})
+        return jsonify({"status": 'success', 'win_rate': float(player.win_rate)})
     except Exception as e:
         return jsonify({"error": f'Failed to reset:{e}'}), 400
 

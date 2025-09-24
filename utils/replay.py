@@ -9,9 +9,9 @@ from .config import game_name, CONFIG, settings
 from .types import EnvName
 
 
-class NumpyBuffer:
+class ReplayBuffer:
     def __init__(self, capacity: int, batch_size: int, game: EnvName = game_name) -> None:
-        self.state_buffer = np.zeros((capacity,) + settings['state_shape'], dtype=np.float32)
+        self.state_buffer = np.zeros((capacity,) + settings['tensor_shape'], dtype=np.float32)
         self.policy_buffer = np.zeros((capacity, settings['default_net']['n_actions']), dtype=np.float32)
         self.value_buffer = np.zeros((capacity,), dtype=np.float32)
         self.batch_size = batch_size

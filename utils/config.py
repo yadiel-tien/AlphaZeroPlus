@@ -32,6 +32,7 @@ class GameConfig(TypedDict):
     screen_size: tuple[int, int]
     grid_size: float
     img_path: str
+    tensor_shape: tuple[int, ...]
     state_shape: tuple[int, ...]
     tao_switch_steps: int
     augment_times: int
@@ -71,7 +72,8 @@ CONFIG: AppConfig = {
     'ChineseChess': {
         'screen_size': (600, 800),
         'grid_size': 54,
-        'state_shape': (10, 9, 20),
+        'tensor_shape': (10, 9, 20),
+        'state_shape': (10, 9, 7),
         'img_path': './graphics/chess/board.jpeg',
         'tao_switch_steps': 30,
         'augment_times': 2,
@@ -91,6 +93,7 @@ CONFIG: AppConfig = {
     'Gomoku': {
         'screen_size': (600, 800),
         'grid_size': 35.2857,
+        'tensor_shape': (15, 15, 2),
         'state_shape': (15, 15, 2),
         'img_path': './graphics/gomoku/board.jpeg',
         'tao_switch_steps': 5,
@@ -106,8 +109,9 @@ CONFIG: AppConfig = {
             'n_policy_filters': 32,  # 策略头卷积层filter数量
             'n_value_filters': 1,  # 价值头卷积层filter数量
             'n_value_hidden_channels': 256  # 价值头隐藏层fc输出通道
-        }
+        },
     },
+
     'data_dir': './data/',
     'dirichlet': 0.2,
     'base_url': 'http://192.168.0.126:5000/',
@@ -123,5 +127,6 @@ CONFIG: AppConfig = {
     'rates_dir': './rates/',
     'training_steps_per_sample': 10
 }
+
 game_name = CONFIG['game_name']
 settings = CONFIG[game_name]

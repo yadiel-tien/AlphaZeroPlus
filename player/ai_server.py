@@ -13,8 +13,11 @@ class AIServer(Player):
         self._n_simulation = n_simulation
         self.mcts: NeuronMCTS | None = None
         self.silent = silent  # silent=True减少日志信息
-        self.description = f'Server {self.model_id}'
         self.win_rate = 0.5
+
+    @property
+    def description(self):
+        return f'Server {self.model_id}'
 
     def get_action(self, state: NDArray, last_action: int, player_to_move: int) -> int:
         """获取动作"""
@@ -35,6 +38,7 @@ class AIServer(Player):
                 player_to_move=player_to_move,
                 model_id=self.model_id
             )
+            self.model_id = int(self.mcts.sock.getpeername().split('_')[-1].split('.')[0])
         else:
             self.mcts.apply_action(last_action)
         if not self.silent:
@@ -52,6 +56,7 @@ class AIServer(Player):
     def reset(self) -> None:
         super().reset()
         self.shutdown()
+        self.win_rate = 0.5
 
     def shutdown(self) -> None:
         if self.mcts:

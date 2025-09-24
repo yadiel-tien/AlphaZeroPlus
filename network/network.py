@@ -1,4 +1,5 @@
 import glob
+import json
 import os
 from typing import Self
 
@@ -121,44 +122,24 @@ class ValueHead(nn.Module):
         return value
 
 
-class Net(nn.Module):
+class BaseNet(nn.Module):
     def __init__(self, config: NetConfig = settings['default_net'], eval_model: bool = True,
                  device=CONFIG['device']) -> None:
-        """
-        类alpha zero结构，双头输出policy和value
-        """
         super().__init__()
         self.config = config
+        self.device = device
+        self.eval_model = eval_model
 
-        self.conv_block = ConvBlock(config['in_channels'], config['n_filters'])
-        self.res_blocks = nn.ModuleList(
-            [ResBlock(config['n_filters'], config['use_se'])
-             for _ in range(config['n_res_blocks'])])
-        self.policy = PolicyHead(config['n_filters'],
-                                 config['n_policy_filters'],
-                                 config['n_cells'],
-                                 config['n_actions'])
-        self.value = ValueHead(config['n_filters'],
-                               config['n_value_filters'],
-                               config['n_value_hidden_channels'],
-                               config['n_cells'])
-        self.to(device)
+    def initialize(self):
+        self.to(self.device)
         # 推理模式
-        if eval_model:
+        if self.eval_model:
             self.eval()
-            msg = f'Network initialized in eval mode on {device}, configuration as below:'
-        else:
-            msg = f'Network initialized in training mode on {device}, configuration as below:'
-        print(msg)
-        for key, value in self.config.items():
-            print(f'{key}:  {value}, ',end='')
-        print()
-
-    def forward(self, x: Tensor) -> tuple[Tensor, Tensor]:
-        x = self.conv_block(x)
-        for res_block in self.res_blocks:
-            x = res_block(x)
-        return self.policy(x), self.value(x)
+        mode = 'eval' if self.eval_model else 'training'
+        print(f'Network initialized in {mode} mode on {self.device}, configuration as below:')
+        # 打印配置
+        print(json.dumps(self.config, indent=2))
+        print("=" * 60)
 
     @classmethod
     def load_latest_from_folder(cls, folder: str, eval_model: bool = True, device=CONFIG['device']) -> tuple[Self, int]:
@@ -166,17 +147,11 @@ class Net(nn.Module):
         :return 加载好的模型和编号"""
         pattern = os.path.join(folder, 'checkpoint_*.pt')
         files = glob.glob(pattern)
-        max_index = -1
-        latest_file = ''
         # 编号最大的就是最新的模型
-        for file in files:
-            index = int(file.split('_')[-1].split('.')[0])
-            if index > max_index:
-                max_index = index
-                latest_file = file
-        model, success = cls.load_from_checkpoint(latest_file, eval_model=eval_model)
+        latest_file = max(files, key=lambda x: int(x.split('_')[-1].split('.')[0]))
+        model, success = cls.load_from_checkpoint(latest_file, eval_model=eval_model, device=device)
         if success:
-            return model, max_index
+            return model, int(latest_file.split('_')[-1].split('.')[0])
 
         return model, -1
 
@@ -192,9 +167,84 @@ class Net(nn.Module):
             model = cls(config, eval_model=eval_model, device=device)
             # 加载参数
             model.load_state_dict(checkpoint['model'])
-        except FileNotFoundError or KeyError:
+        except (FileNotFoundError, KeyError):
             success = False
             print('Checkpoint read error,  creating new model from default settings.')
             model = cls(eval_model=eval_model, device=device)
 
         return model, success
+
+
+class Net(BaseNet):
+    def __init__(self, config: NetConfig = settings['default_net'], eval_model: bool = True,
+                 device=CONFIG['device']) -> None:
+        """
+        类alpha zero结构，双头输出policy和value
+        """
+        super().__init__(config, eval_model, device)
+        self.conv_block = ConvBlock(config['in_channels'], config['n_filters'])
+        self.res_blocks = nn.ModuleList(
+            [ResBlock(config['n_filters'], config['use_se'])
+             for _ in range(config['n_res_blocks'])])
+        self.policy = PolicyHead(config['n_filters'],
+                                 config['n_policy_filters'],
+                                 config['n_cells'],
+                                 config['n_actions'])
+        self.value = ValueHead(config['n_filters'],
+                               config['n_value_filters'],
+                               config['n_value_hidden_channels'],
+                               config['n_cells'])
+
+        self.initialize()
+
+    def forward(self, x: Tensor) -> tuple[Tensor, Tensor]:
+        x = self.conv_block(x)
+        for res_block in self.res_blocks:
+            x = res_block(x)
+        return self.policy(x), self.value(x)
+
+
+class BiGameNet(BaseNet):
+    def __init__(self, config: dict = None, eval_model: bool = True, device=CONFIG['device']):
+        game1_config = CONFIG['ChineseChess']['default_net']
+        game2_config = CONFIG['Gomoku']['default_net']
+        self.config = {
+            'game1': game1_config,
+            'game2': game2_config
+        } if config is None else config
+        super().__init__(self.config['game1'], eval_model, device)
+        self.conv_blocks = nn.ModuleDict()
+        self.policy_heads = nn.ModuleDict()
+        self.value_heads = nn.ModuleDict()
+        for key, game_config in self.config.items():
+            self.conv_blocks[key] = ConvBlock(game_config['in_channels'], game_config['n_filters'])
+            self.policy_heads[key] = PolicyHead(
+                in_channels=game_config['n_filters'],
+                n_filters=game_config['n_policy_filters'],
+                n_cells=game_config['n_cells'],
+                n_actions=game_config['n_actions'])
+            self.value_heads[key] = ValueHead(
+                in_channels=game_config['n_filters'],
+                n_filters=game_config['n_value_filters'],
+                hidden_channels=game_config['n_value_hidden_channels'],
+                n_cells=game_config['n_cells']
+            )
+
+        self.res_blocks = nn.ModuleList(
+            [ResBlock(game1_config['n_filters'], game1_config['use_se']) for _ in range(game1_config['n_res_blocks'])])
+
+        self.initialize()
+
+    def _determine_game_key(self, x: Tensor) -> str:
+        c, h, w = x.shape[-3:]
+        for key, game_config in self.config.items():
+            if c == game_config['in_channels'] and h * w == game_config['n_cells']:
+                return key
+        raise RuntimeError('Input tensor shape do not match!')
+
+    def forward(self, x: Tensor) -> tuple[Tensor, Tensor]:
+        key = self._determine_game_key(x)
+        x = self.conv_blocks[key](x)
+        for res_block in self.res_blocks:
+            x = res_block(x)
+        return self.policy_heads[key](x), self.value_heads[key](x)

@@ -8,8 +8,11 @@ class Player:
     def __init__(self, env_name: EnvName):
         self.pending_action: int = -1
         self.is_thinking: bool = False
-        self.description: str = 'Player'
         self.env_class = get_class(env_name)
+
+    @property
+    def description(self) -> str:
+        return "Player"
 
     def update(self, env: BaseEnv) -> None:
         pass

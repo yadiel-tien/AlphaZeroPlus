@@ -11,7 +11,8 @@ from env.chess import ChineseChess
 from env.functions import get_class
 from inference.functions import get_checkpoint_path
 from utils.logger import get_logger
-from utils.replay import NumpyBuffer
+from utils.state_buffer import StateBuffer
+from utils.replay import ReplayBuffer
 from utils.config import game_name, settings
 from mcts.deepMcts import NeuronMCTS
 from inference.client import require_fit, require_train_server_shutdown, require_update_eval_model, \
@@ -24,11 +25,20 @@ class SelfPlayManager:
     def __init__(self, n_workers: int):
         self.logger = get_logger('selfplay')
         self.n_workers = n_workers
-        self.buffer = NumpyBuffer(500_000, 2048)
+        self.buffer = ReplayBuffer(500_000, 2048)
         self.buffer.load()
         self.env_class = get_class(game_name)
         self.best_index = read_best_index()
         self.pool = ThreadPoolExecutor(self.n_workers)
+        self.midgame_buffer = StateBuffer(2000, 'midgame')
+        self.opening_buffer = StateBuffer(2000, 'opening')
+        self.midgame_buffer.load()
+        self.opening_buffer.load()
+        self.debug_logger = get_logger('debug')
+
+    def run_bi_game(self, n_games: int) -> None:
+        """交替训练两个游戏，使网络具有掌握两种游戏的泛化能力"""
+        pass
 
     def run(self, n_games: int) -> None:
         """训练入口
@@ -44,7 +54,6 @@ class SelfPlayManager:
                 self.logger.info(f'Collecting data.Current buffer size: {self.buffer.size}.')
 
             # 开始selfplay。新数据会进行积累，直到新模型产生。
-
             n_data = self.self_play(iteration=iteration, n_games=n_games)
 
             # 服务端进行模型训练，并保存参数，升级infer model
@@ -56,7 +65,6 @@ class SelfPlayManager:
             while not os.path.exists(path):
                 self.logger.info(f'Checkpoint {path} does not exist. Retrying.')
                 time.sleep(1)
-
             # 评估模型，按结果更新模型
             self.evaluation(iteration, n_games=50)
 
@@ -86,11 +94,13 @@ class SelfPlayManager:
 
             for sample in samples:
                 self.buffer.add(sample)
-            if win_count + lose_count + draw_count >= n_games:
+            if completed >= n_games:
                 stop_signal.set()
                 break
 
         self.buffer.save()
+        self.midgame_buffer.save()
+        self.opening_buffer.save()
         # 总结
         duration = time.time() - start
         self.logger.info(
@@ -108,20 +118,29 @@ class SelfPlayManager:
         :return [(state,pi_move,q),...],winner.winner0,1代表获胜玩家，-1代表平局"""
 
         env = self.env_class()
-        state, _ = env.reset()
+        env.reset()
+        # 25%概率从残局开始
+        start_from_beginning = True
+        if random.random() < 0.25 and len(self.midgame_buffer) > 50:
+            start_from_beginning = False
+            env.state = self.midgame_buffer.sample()
 
-        mcts = NeuronMCTS.make_selfplay_mcts(state=state,
+        mcts = NeuronMCTS.make_selfplay_mcts(state=env.state,
                                              env_class=self.env_class,
                                              last_action=env.last_action,
                                              player_to_move=env.player_to_move)
         steps = 0
         samples = []
         while not env.terminated and not env.truncated:
-            # Playout Cap Randomization (模拟次数随机化),丰富训练数据的多样性。
-            # n_simulation = random.randint(200, n_simulation)
+            if steps == 8 and start_from_beginning and (0.4 < mcts.root.win_rate < 0.6):
+                self.opening_buffer.append(env.state)
+            if steps == 50 and start_from_beginning and (0.4 < mcts.root.win_rate < 0.6):
+                self.midgame_buffer.append(env.state)
+
             mcts.run(n_simulation)  # 模拟
 
             # 采集原始概率分布。象棋需要交换红黑双方位置对应的概率分布
+
             pi_target = mcts.get_pi(1.0)
             if env.player_to_move == 1 and isinstance(env, ChineseChess):
                 pi_target = ChineseChess.switch_side_policy(pi_target)
@@ -132,7 +151,10 @@ class SelfPlayManager:
             samples.append((state, pi_target, -q, env.player_to_move))
 
             # 前期高温，后期低温。根据mcts模拟的概率分布进行落子
-            temperature = 1.0 if steps < settings['tao_switch_steps'] else 0.2
+            if start_from_beginning and steps < settings['tao_switch_steps']:
+                temperature = 1.0
+            else:
+                temperature = 0.1
             pi = mcts.get_pi(temperature)  # 获取mcts的概率分布pi
             action = np.random.choice(len(pi), p=pi)
             env.step(action)  # 执行落子
@@ -157,7 +179,6 @@ class SelfPlayManager:
         # 截断的不收集数据
         if env.truncated:
             return [], env.winner
-
         env.render()
         print(f'winner: {env.winner},steps: {steps}')
 
@@ -185,14 +206,15 @@ class SelfPlayManager:
         stop_signal = threading.Event()
         futures = [self.pool.submit(self.evaluation_worker, iteration, stop_signal) for _ in
                    range(n_games + self.n_workers // 2)]
-        win_count, lose_count, draw_count, win_rate = 0, 0, 0, 0.0
+        win_count, lose_count, draw_count, win_rate, total_steps = 0, 0, 0, 0.0, 0
         # 进度条
         pbar = tqdm(as_completed(futures), total=n_games, desc=f'{iteration} VS {self.best_index}:')
         for future in pbar:
-            result = future.result()
-            win_count += result == 0
-            lose_count += result == 1
-            draw_count += result == -1
+            winner, steps = future.result()
+            total_steps += steps
+            win_count += winner == 0
+            lose_count += winner == 1
+            draw_count += winner == -1
             completed = win_count + lose_count + draw_count
             win_rate = (win_count + draw_count / 2) / completed
             pbar.set_postfix({'win_rate': f'{win_rate:.2%}'})  # 进度条后面添加当前胜率
@@ -206,19 +228,20 @@ class SelfPlayManager:
             self.best_index = iteration
             save_best_index(iteration)
             require_update_eval_model(iteration)
-            self.logger.info(f'更新最佳模型为{iteration}, 评估用时{time.time() - start_time:.2f}秒.')
+            self.logger.info(
+                f'更新最佳模型为{iteration}，平均步数{total_steps // n_games}步，评估用时{time.time() - start_time:.2f}秒.')
         else:
             self.logger.info(
-                f'最佳模型仍旧为{self.best_index},重新开始训练新模型, 评估用时{time.time() - start_time:.2f}秒.')
+                f'最佳模型仍旧为{self.best_index}，平均步数{total_steps // n_games}步， 评估用时{time.time() - start_time:.2f}秒.')
             require_restore_fit_model(best_index=self.best_index, iteration=iteration)
 
-    def evaluation_worker(self, iteration: int, stop_signal: threading.Event) -> int:
+    def evaluation_worker(self, iteration: int, stop_signal: threading.Event) -> tuple[int, int]:
         """iteration对战最佳模型，随机先手顺序。
         :return 0新模型胜，1老模型胜，-1平"""
         env = self.env_class()
-        # 随机前两步开局，增加随机性
-        if isinstance(env, ChineseChess):
-            env.random_opening()
+        # 随机前8步开局，增加随机性
+        if len(self.opening_buffer) > 50:
+            env.state = self.opening_buffer.sample()
         # 随机先后手
         model_list = [iteration, self.best_index] if random.random() < 0.5 else [self.best_index, iteration]
         competitors = [NeuronMCTS.make_socket_mcts(
@@ -229,7 +252,8 @@ class SelfPlayManager:
             model_id=index
         ) for index in model_list]
         # 随机模拟测试
-        n_simulation = random.randint(200, 500)
+        n_simulation = 300
+        steps = 0
         while not env.terminated and not env.truncated:
             mcts = competitors[env.player_to_move]
             mcts.run(n_simulation)
@@ -242,17 +266,18 @@ class SelfPlayManager:
                 mcts.apply_action(action)
             if stop_signal.is_set():
                 env.truncated = True
+            steps += 1
 
         for mcts in competitors:
             mcts.shutdown()
 
         if env.winner in (-1, 2):  # 和棋或被提前终止
-            return env.winner
+            return env.winner, steps
         winner = model_list[env.winner]
         if winner == iteration:
-            return 0
+            return 0, steps
         else:
-            return 1
+            return 1, steps
 
     def shutdown(self):
         self.pool.shutdown()

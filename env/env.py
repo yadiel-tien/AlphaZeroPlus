@@ -161,7 +161,7 @@ class BaseEnv(gym.Env, ABC):
     @classmethod
     @abstractmethod
     def restore_policy(cls, policy: NDArray, symmetry_idx: int) -> NDArray:
-        "根据symmetric_idx将神经网络产生的policy还原回去，因为喂给神经网络前进行了镜像反转"
+        """根据symmetric_idx将神经网络产生的policy还原回去，因为喂给神经网络前进行了镜像反转"""
         ...
 
     def reset_status(self) -> None:
