@@ -100,10 +100,11 @@ class Gomoku(BaseEnv):
         """从动作编号获取坐标 (row, col)"""
         return divmod(int(action), cls.shape[1])
 
-    @classmethod
-    def describe_move(cls, state: NDArray, action_to_move: int) -> None:
+    def describe_last_move(self) -> None:
         """无UI对弈时，打印描述行棋的说明"""
-        row, col = cls.action2move(action_to_move)
+        if self.last_action == -1:
+            return
+        row, col = self.action2move(self.last_action)
         print(f'选择落子：({row + 1},{col + 1})')
 
     @staticmethod

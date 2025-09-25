@@ -121,7 +121,7 @@ class SelfPlayManager:
         env.reset()
         # 25%概率从残局开始
         start_from_beginning = True
-        if random.random() < 0.25 and len(self.midgame_buffer) > 50:
+        if random.random() < 0.5 and len(self.midgame_buffer) > 50:
             start_from_beginning = False
             env.state = self.midgame_buffer.sample()
 

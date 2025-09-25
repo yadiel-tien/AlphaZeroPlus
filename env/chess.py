@@ -359,15 +359,16 @@ class ChineseChess(BaseEnv):
             return action
         raise RuntimeError("handle_human_input should never reach here")
 
-    @classmethod
-    def describe_move(cls, state: NDArray, action_to_move: int) -> None:
-        r, c, tr, tc = cls._action2move[action_to_move]
+    def describe_last_move(self) -> None:
+        if self.last_action == -1:
+            return
+        r, c, tr, tc = self._action2move[self.last_action]
         big_char = ['一', '二', '三', '四', '五', '六', '七', '八', '九']
         red_col = big_char[::-1]
         black_col = list(range(1, 10))
         desc = ''
-        piece_id = int(state[r, c, 0])
-        piece = cls.id2piece[piece_id]
+        piece_id = int(self.state[r, c, 1])
+        piece = self.id2piece[piece_id]
         desc += piece[1]
         is_red = 0 <= piece_id < 7
         if is_red:
@@ -403,7 +404,7 @@ class ChineseChess(BaseEnv):
                 else:
                     desc += str(black_col[tc])
 
-        eat_piece = cls.id2piece[int(state[tr, tc, 0])]
+        eat_piece = self.id2piece[int(self.state[tr, tc, 1])]
         result = '' if eat_piece == '一一' else '吃 ' + eat_piece
         print(f'{desc} ({r},{c}) -> ({tr}, {tc}) {result}')
 

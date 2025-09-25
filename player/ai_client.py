@@ -1,15 +1,23 @@
 import json
 import threading
 import time
+from enum import Enum, auto
 from typing import Any
 
 import numpy as np
 import requests
+from numpy.typing import NDArray
 
-from env.env import BaseEnv
 from utils.types import EnvName
 from .player import Player
 from utils.config import CONFIG
+
+
+class ClientStatus(Enum):
+    UNINITIATED = auto()
+    DEACTIVATED = auto()
+    IDLE = auto()
+    UPDATED = auto()
 
 
 class AIClient(Player):
@@ -19,26 +27,32 @@ class AIClient(Player):
         self.pid = ''
         self.time_stamp = 0
         self.session = requests.Session()
-        self.request_setup()
         self.alive = True
         self.win_rate = 0.5
-        threading.Thread(target=self._heartbeat_loop, daemon=True).start()
+        self.status = ClientStatus.UNINITIATED
 
     @property
     def description(self) -> str:
         return f'AI({self.model_id})'
 
-    def update(self, env: BaseEnv) -> None:
-        """负责启动推理线程"""
+    def update(self, state: NDArray, last_action: int, player_to_move: int) -> None:
+        """不能阻塞，实时更新"""
         if not self.is_thinking:
-            # 新线程运行MCTS
             self.is_thinking = True
-            threading.Thread(target=self.request_move, args=(env.state, env.last_action, env.player_to_move),
-                             daemon=True).start()
+            if self.status == ClientStatus.UNINITIATED:
+                threading.Thread(target=self.request_setup, args=(state, last_action, player_to_move),
+                                 daemon=True).start()
+            elif self.status == ClientStatus.DEACTIVATED:
+                threading.Thread(target=self._heartbeat_loop, daemon=True).start()
+            elif self.status == ClientStatus.IDLE:
+                threading.Thread(target=self.request_update, args=(state, last_action, player_to_move),
+                                 daemon=True).start()
+            else:
+                threading.Thread(target=self.request_action, daemon=True).start()
 
-    def request_move(self, state: np.ndarray, last_action: int, player_to_move: int) -> None:
-        """给server发请求，获取action"""
-        url = CONFIG['base_url'] + 'make_move'
+    def request_update(self, state: np.ndarray, last_action: int, player_to_move: int) -> None:
+        """给server发请求，更新盘面"""
+        url = CONFIG['base_url'] + 'update'
         payload = {
             'array': state.tolist(),
             'action': last_action,
@@ -46,10 +60,21 @@ class AIClient(Player):
             'player_to_move': player_to_move
         }
         response = self.post_request(url, payload)
+        self.win_rate = response.get('win_rate')
+        self.status = ClientStatus.UPDATED
+        self.is_thinking = False
+
+    def request_action(self) -> None:
+        """给server发请求，获取action"""
+        url = CONFIG['base_url'] + 'get_action'
+        payload = {
+            'pid': self.pid,
+        }
+        response = self.post_request(url, payload)
 
         self.pending_action = response.get('action')
         self.win_rate = response.get('win_rate')
-        self.model_id = response.get('model_id')
+        self.status = ClientStatus.IDLE
         self.is_thinking = False
 
     def request_reset(self) -> None:
@@ -60,6 +85,8 @@ class AIClient(Player):
         self.win_rate = response.get('win_rate')
 
     def _heartbeat_loop(self):
+        self.status = ClientStatus.IDLE
+        self.is_thinking = False
         while self.alive:
             self.send_heartbeat()
             time.sleep(5)
@@ -72,12 +99,19 @@ class AIClient(Player):
         response = self.post_request(url, payload)
         self.win_rate = response.get('win_rate')
 
-    def request_setup(self) -> None:
+    def request_setup(self, state: NDArray, last_action: int, play_to_move: int) -> None:
         """告知server创建推理引擎"""
         url = CONFIG['base_url'] + 'setup'
-        payload = {'model_id': self.model_id, 'env_class': self.env_class.__name__}
+        payload = {'model_id': self.model_id,
+                   'env_class': self.env_class.__name__,
+                   'state': state.tolist(),
+                   'last_action': last_action,
+                   'play_to_move': play_to_move}
         response = self.post_request(url, payload)
         self.pid = response.get('pid')
+        self.model_id = response.get('model_id')
+        self.status = ClientStatus.DEACTIVATED
+        self.is_thinking = False
 
     def post_request(self, url: str, payload: dict[str, Any]) -> dict[str, Any]:
         """发送请求的基础方法，获取反馈，处理错误"""
@@ -91,7 +125,6 @@ class AIClient(Player):
                 timeout=60  # 添加超时设置
             )
             response.raise_for_status()  # 自动处理4xx/5xx错误
-
             return response.json()
 
         except requests.exceptions.HTTPError as http_err:
@@ -115,8 +148,10 @@ class AIClient(Player):
             raise  # 重新抛出异常
 
     def reset(self) -> None:
-        self.request_reset()
+        if self.status != ClientStatus.UNINITIATED:
+            self.request_reset()
         super().reset()
+        self.status = ClientStatus.UNINITIATED
 
     def shutdown(self) -> None:
         self.alive = False

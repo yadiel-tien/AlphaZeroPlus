@@ -26,11 +26,11 @@ class MCTSPlayer(Player):
         self.env_class.describe_move(state, self.pending_action)
         return self.pending_action
 
-    def update(self, env: BaseEnv) -> None:
+    def update(self,  state: NDArray, last_action: int, player_to_move: int) -> None:
         if not self._thinking:
             # 新线程运行MCTS
             self.is_thinking = True
-            self._thread = threading.Thread(target=self._run_mcts, args=(env.state.copy(), env.last_action),
+            self._thread = threading.Thread(target=self._run_mcts, args=(state.copy(), last_action),
                                             name='MCTS run')
             self._thread.start()
 

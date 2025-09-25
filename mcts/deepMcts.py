@@ -246,6 +246,12 @@ class NeuronMCTS:
                     raise RuntimeError(f"Connection to {sock_path} time out,mcts setup failed!")
         return mcts
 
+    def set_root(self, state: NDArray, last_action: int, player_to_move: int) -> None:
+        """将root初始化为新的值"""
+        env_class = self.root.env
+        self.root.cleanup()
+        self.root = NeuronNode(state, last_action, player_to_move, env_class)
+
     def choose_action(self) -> int:
         """选择访问量最大的孩子作为根节点，并裁剪树"""
         action = int(np.argmax(self.root.child_n))
@@ -308,13 +314,4 @@ class NeuronMCTS:
 
     def shutdown(self):
         """关闭时清理socket"""
-        # node交叉引用，自动清理较慢，手动断开连接
-        if self.root:
-            self.root.cleanup()
-            self.root = None
-        if self.sock:
-            self.sock.close()
-            self.sock = None
-
-    def __del__(self):
-        self.shutdown()
+        # node交叉

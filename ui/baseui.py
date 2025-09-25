@@ -52,7 +52,6 @@ class GameUI(ABC):
                     player.selected_grid = self.cursor_grid
                     self.handle_human_input()
 
-
         else:
             self.start_btn.handle_input(event)
             self.reverse_player_btn.handle_input(event)
@@ -76,7 +75,7 @@ class GameUI(ABC):
                 else:
                     self.switch_side()
             else:
-                player.update(self.env)
+                player.update(self.env.state, self.env.last_action, self.env.player_to_move)
 
     @abstractmethod
     def handle_human_input(self) -> None:

@@ -18,7 +18,7 @@ class Game:
         pygame.init()
         self.screen = pygame.display.set_mode(settings['screen_size'])
         pygame.display.set_caption(game_name)
-        self.players = [Human(game_name), AIClient(339, game_name)]
+        self.players = [Human(game_name), AIClient(356, game_name)]
         if game_name == 'Gomoku':
             self.board = GomokuUI(self.players)
         else:

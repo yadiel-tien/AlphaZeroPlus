@@ -1,5 +1,4 @@
 from numpy.typing import NDArray
-from env.env import BaseEnv
 from env.functions import get_class
 from utils.types import EnvName
 
@@ -14,10 +13,10 @@ class Player:
     def description(self) -> str:
         return "Player"
 
-    def update(self, env: BaseEnv) -> None:
+    def update(self, state: NDArray, last_action: int, player_to_move: int) -> None:
         pass
 
-    def get_action(self, state: NDArray, last_action: int, player_to_move: int) -> int:
+    def get_action(self) -> int:
         pass
 
     def reset(self) -> None:

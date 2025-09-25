@@ -41,21 +41,22 @@ def setup(data: Any) -> Any:
         pid = str(uuid.uuid4())
         with lock:
             clients_live_time[pid] = time.time()
-            ai_players[pid] = AIServer(env_name, model_id, 1000)
-        return jsonify({"status": "success", 'pid': pid})
+            player = AIServer(env_name, model_id, 1000, verbose=False)
+            ai_players[pid] = player
+        return jsonify({'pid': pid, 'model_id': player.model_id})
     except Exception as e:
         print(f'Failed to setup AI: {e}')
-        return jsonify({"error": f'Failed to setup AI:{e}'}), 400
+        return jsonify({"error": f'Failed to setup AI:{e}'}), 500
 
 
-@app.route('/make_move', methods=['POST'])
+@app.route('/update', methods=['POST'])
 @require_json
-def make_move(data: Any) -> Any:
+def update(data: Any) -> Any:
     try:
         pid = data['pid']
         with lock:
             if pid not in ai_players:
-                return jsonify({"error": "Player has not been setup properly!"}), 400
+                return jsonify({"error": "Player has not been setup properly!"}), 404
 
             clients_live_time[pid] = time.time()
             player = ai_players[pid]
@@ -63,15 +64,35 @@ def make_move(data: Any) -> Any:
         state = np.array(data['array'], dtype=np.float32)
         last_action = data['action']
         player_to_move = data['player_to_move']
-        action = player.get_action(state, last_action, player_to_move)
+        player.update_state(state, last_action, player_to_move)
         win_rate = float(player.win_rate)
-        return jsonify({"status": "success",
-                        "action": action,
-                        'win_rate': win_rate,
-                        'model_id': player.model_id})
+        return jsonify({
+            'win_rate': win_rate})
     except Exception as e:
         traceback.print_exc()
-        return jsonify({"error": f'Failed to make move:{e}'}), 400
+        return jsonify({"error": f'Failed to make move:{e}'}), 500
+
+
+@app.route('/get_action', methods=['POST'])
+@require_json
+def get_action(data: Any) -> Any:
+    try:
+        pid = data['pid']
+        with lock:
+            if pid not in ai_players:
+                return jsonify({"error": "Player has not been setup properly!"}), 404
+
+            clients_live_time[pid] = time.time()
+            player = ai_players[pid]
+
+        action = player.get_action()
+        win_rate = float(player.win_rate)
+        return jsonify({
+            "action": action,
+            'win_rate': win_rate})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": f'Failed to make move:{e}'}), 500
 
 
 @app.route('/reset', methods=['POST'])
@@ -81,15 +102,15 @@ def reset(data: Any) -> Any:
         pid = data['pid']
         with lock:
             if pid not in ai_players:
-                return jsonify({"error": "Player has not been setup properly!"}), 400
+                return jsonify({"error": "Player has not been setup properly!"}), 404
 
             clients_live_time[pid] = time.time()
             player = ai_players[pid]
 
         player.reset()
-        return jsonify({"status": 'success', "win_rate": player.win_rate})
+        return jsonify({"win_rate": player.win_rate})
     except Exception as e:
-        return jsonify({"error": f'Failed to reset:{e}'}), 400
+        return jsonify({"error": f'Failed to reset:{e}'}), 500
 
 
 @app.route('/heartbeat', methods=['POST'])
@@ -99,14 +120,14 @@ def heartbeat(data: Any) -> Any:
         pid = data['pid']
         with lock:
             if pid not in ai_players:
-                return jsonify({"error": "Player has not been setup properly!"}), 400
+                return jsonify({"error": "Player has not been setup properly!"}), 404
 
             clients_live_time[pid] = time.time()
             player = ai_players[pid]
 
-        return jsonify({"status": 'success', 'win_rate': float(player.win_rate)})
+        return jsonify({'win_rate': float(player.win_rate)})
     except Exception as e:
-        return jsonify({"error": f'Failed to reset:{e}'}), 400
+        return jsonify({"error": f'Failed to receive heartbeat:{e}'}), 500
 
 
 def cleanup_dead_clients(timeout=60):

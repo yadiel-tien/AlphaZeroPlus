@@ -31,10 +31,9 @@ class BaseEnv(gym.Env, ABC):
         """无UI的情况下，通过控制台交互，将用户输入转换为动作输出"""
         ...
 
-    @classmethod
     @abstractmethod
-    def describe_move(cls, state: NDArray, action_to_move: int) -> None:
-        """用于无UI界面，在控制台描述所走棋步.需要输入走棋之前的state和action"""
+    def describe_last_move(self) -> None:
+        """用于无UI界面，在控制台描述刚刚所走棋步."""
         ...
 
     @classmethod
@@ -67,7 +66,8 @@ class BaseEnv(gym.Env, ABC):
         while True:
             if not silent:
                 print(f'-----player{index + 1} {players[index].description}-----')
-            action = players[index].get_action(self.state, self.last_action, self.player_to_move)
+            players[index].update(self.state, self.last_action, self.player_to_move)
+            action = players[index].pending_action
             _, reward, terminated, truncated, _ = self.step(action)
             if not silent:
                 self.render()
