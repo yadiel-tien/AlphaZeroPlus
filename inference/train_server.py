@@ -22,10 +22,10 @@ from .request import SocketRequest
 
 class TrainServer(InferServer):
     def __init__(self, model_id: int, env_name: EnvName, max_listen_workers: int = 100):
-        super().__init__(model_id, env_name, max_listen_workers, training=True)
+        super().__init__(model_id, env_name, max_listen_workers, verbose=True)
         self.fit_logger = get_logger('fit')
         # 模型
-        self.fit_model = Net(self.eval_model.config, eval_model=False)
+        self.fit_model = Net(self.infer_model.config, eval_model=False)
         # 优化器和学习率调解器
         self.optimizer = torch.optim.Adam(self.fit_model.parameters(), lr=1e-3, weight_decay=1e-4)
         self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer=self.optimizer,
@@ -106,7 +106,7 @@ class TrainServer(InferServer):
                         self.shutdown()
                     elif data['command'] == 'update_eval_model':  # 训练有效，更新推理模型
                         with self.model_lock:
-                            self.eval_model.load_state_dict(self.fit_model.state_dict())
+                            self.infer_model.load_state_dict(self.fit_model.state_dict())
                             self.model_index = data['iteration']
                         # 清空缓存
                         self.clear_flag = True
@@ -116,7 +116,8 @@ class TrainServer(InferServer):
                         path = get_checkpoint_path(self.env_name, data['iteration'])
                         if os.path.exists(path):
                             os.remove(path)
-                        self.fit_logger.info(f'Model{data['iteration']} does not pass evaluation, checkpoint was deleted.')
+                        self.fit_logger.info(
+                            f'Model{data['iteration']} does not pass evaluation, checkpoint was deleted.')
                     else:
                         self.fit_logger.info(f'[-] Received unsupported command: {data["command"]}')
                 else:

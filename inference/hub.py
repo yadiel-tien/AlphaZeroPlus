@@ -84,11 +84,14 @@ class ServerHub:
 
     def remove_infer(self, model_name: str) -> None:
         """没有应用在使用infer，将其移除清理。检查使用情况在infer内部"""
-        if model_name in self.infers:
-            with self.lock:
+        infer = None
+        with self.lock:
+            if model_name in self.infers:
                 infer = self.infers.pop(model_name)
-                infer.shutdown()
-                self.logger.info(f'{model_name} has been removed!')
+
+        if infer:
+            infer.shutdown()
+            self.logger.info(f'{model_name} has been removed!')
         else:
             self.logger.info(f'remove failed, model {model_name} is not registered!')
 

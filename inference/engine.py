@@ -17,28 +17,36 @@ from network.network import Net
 
 
 class InferenceEngine:
-    def __init__(self, model_index: int, env_name: EnvName, training: bool = False):
+    def __init__(self, model_index: int, env_name: EnvName, verbose=False):
+        self.verbose = verbose
         # 推理model
         model_path = get_checkpoint_path(env_name, model_index)
-        self.eval_model, success, = Net.load_from_checkpoint(model_path, eval_model=True)
+        self.infer_model, success, = Net.load_from_checkpoint(model_path, eval_model=True)
         self.model_index = model_index if success else -1
         self.env_name = env_name
         # 负责单个request的发送接收
         self.request_queue: queue.Queue[QueueRequest | SocketRequest] = queue.Queue()
-        self._request_thread: threading.Thread | None = None
-        # 负责多个request组成batch发送推理和结果分发
-        self.infer_queue: queue.Queue[list[QueueRequest | SocketRequest]] = queue.Queue()
+        self._collector_thread: threading.Thread | None = None
+        # 负责多个request组成batch转为tensor
+        self.preprocess_queue: queue.Queue[list[QueueRequest | SocketRequest]] = queue.Queue()
+        self._preprocess_thread: threading.Thread | None = None
+        # 负责推理
+        self.infer_queue: queue.Queue[tuple[list[QueueRequest | SocketRequest], torch.Tensor]] = queue.Queue()
         self._infer_thread: threading.Thread | None = None
+        # 负责推理结果的处理
+        self.result_queue: queue.Queue[tuple[list[QueueRequest | SocketRequest], NDArray, NDArray]] = queue.Queue()
+        self._result_thread: threading.Thread | None = None
+
         self.running = False
         self.model_lock = threading.Lock()
-        self.training = training
         self.logger = get_logger('inference')
-        if self.training:
-            # 置换表
-            self.transposition_table = LRU(200_000)
-            self.hit = 0
-            self.total_request = 0
-            self.clear_flag = False
+        # 置换表
+        self.transposition_table = LRU(200_000)
+        self.cache_hits = 0
+        self.finished_requests = 0
+        self.start_time = time.time()
+        self.total_requests = 0
+        self.clear_flag = False
 
     @property
     def name(self):
@@ -56,19 +64,24 @@ class InferenceEngine:
         """启动推理线程"""
         if not self.running:
             self.running = True
-            self._request_thread = threading.Thread(target=self._collect_loop, daemon=True)
-            self._request_thread.start()
+            self._collector_thread = threading.Thread(target=self._collect_loop, daemon=True)
+            self._collector_thread.start()
+            self._preprocess_thread = threading.Thread(target=self._pre_infer_loop, daemon=True)
+            self._preprocess_thread.start()
             self._infer_thread = threading.Thread(target=self._inference_loop, daemon=True)
             self._infer_thread.start()
+            self._result_thread = threading.Thread(target=self._post_infer_loop, daemon=True)
+            self._result_thread.start()
 
     def _collect_loop(self):
         """从request queue收集数据，尽可能多的收集数据打包"""
+        self.start_time = time.time()
         while self.running:
             batch_size = 1
             threshold = 8
-            max_size = 20
+            max_size = 32
             n_pending = self.infer_queue.qsize()
-            delay = 8e-4 + 6e-4 * n_pending  # 根据queue排队情况，动态调整
+            delay = 1e-3 + 5e-3 * n_pending  # 根据queue排队情况，动态调整
             phase = 'ramp up'
             requests = []
 
@@ -90,65 +103,85 @@ class InferenceEngine:
                     threshold = max(1, batch_size // 2)
                     batch_size = threshold
                     phase = 'ramp up'
+                    if not self.running:
+                        break
             if requests:
-                self.infer_queue.put(requests)
+                self.preprocess_queue.put(requests)
 
-    def _inference_loop(self):
-        """推理loop，持续不断的接收state，打包，发GPU推理，返回结果"""
+    def _pre_infer_loop(self):
+        """做推理前准备工作，将batch_queue接收到的数据查缓存，打包，转tensor"""
         while self.running:
-            start = time.time()
             # 收到清空信号重置置换表
-            if self.training and self.clear_flag:
+            if self.clear_flag:
                 self.clear_flag = False
-                self.hit = 0
-                self.total_request = 0
+                self.cache_hits = 0
+                self.total_requests = 0
                 self.transposition_table.clear()
+                self.start_time = time.time()
+                self.finished_requests = 0
 
             # 获取推理列表
             try:
-                requests = self.infer_queue.get(timeout=0.5)
+                requests = self.preprocess_queue.get(timeout=0.5)
             except queue.Empty:
-                continue  # 避免get阻塞不能结束循环
+                continue
 
             # 检查缓存
-            if self.training:
-                miss_list = []
-                for request in requests:
-                    self.total_request += 1
-                    key = self.make_state_key(request.state)
-                    if key in self.transposition_table:  # 命中
-                        policy, value = self.transposition_table[key]
-                        self.deliver_one(request, policy, value)
-                        self.hit += 1
-                    else:
-                        miss_list.append(request)
-            else:
-                miss_list = requests
+            miss_list: list[QueueRequest | SocketRequest] = []
+            for request in requests:
+                self.total_requests += 1
+                key = self.make_state_key(request.state)
+                if key in self.transposition_table:  # 命中
+                    policy, value = self.transposition_table[key]
+                    self.deliver_one(request, policy, value)
+                    self.cache_hits += 1
+                    self.finished_requests += 1
+                else:
+                    miss_list.append(request)
             if not miss_list:
                 continue
 
             # 处理batch，转为tensor
             batch = [np.transpose(request.state, axes=[2, 0, 1]) for request in miss_list]
-            batch_tensor = torch.from_numpy(np.stack(batch)).to(CONFIG['device'], dtype=torch.float32)
+            batch_tensor = torch.from_numpy(np.stack(batch)).pin_memory()
+            self.infer_queue.put((miss_list, batch_tensor))
 
-            # 交模型推理，取回结果
-            with torch.no_grad():
-                with torch.amp.autocast('cuda'):  # 混合精度
-                    with self.model_lock:
-                        logits, values = self.eval_model(batch_tensor)
-            probs = torch.nn.functional.softmax(logits.float(), dim=-1).cpu().numpy()
-            values = values.float().cpu().numpy()
-            self.deliver_result(miss_list, probs, values)
+    def _inference_loop(self):
+        """推理loop，持续不断的接收state，打包，发GPU推理，返回结果"""
+        while self.running:
+            try:
+                miss_list, tensor = self.infer_queue.get(timeout=0.5)
+                batch_tensor = tensor.to(CONFIG['device'], dtype=torch.float32, non_blocking=True)
+                # 交模型推理，取回结果
+                with torch.no_grad():
+                    with torch.amp.autocast('cuda'):  # 混合精度
+                        with self.model_lock:
+                            logits, values = self.infer_model(batch_tensor)
+                probs = torch.nn.functional.softmax(logits.float(), dim=-1).cpu().numpy()
+                values = values.float().cpu().numpy()
+                self.result_queue.put((miss_list, probs, values))
+            except queue.Empty:
+                continue
 
-            # 更新缓存
-            if self.training:
+    def _post_infer_loop(self):
+        while self.running:
+            try:
+                miss_list, probs, values = self.result_queue.get(timeout=0.5)
+                self.deliver_result(miss_list, probs, values)
+
+                # 更新缓存
                 for request, prob, value in zip(miss_list, probs, values):
                     key = self.make_state_key(request.state)
                     self.transposition_table[key] = (prob.copy(), float(value))
-
-                msg = f'{len(miss_list):>2} requests inference took {time.time() - start:.10f} seconds.Pending:{self.infer_queue.qsize():2}.'
-                msg += f' hit rate: {self.hit / (self.total_request + 1) :.2%}, total:{self.total_request}.'
+                self.finished_requests += len(miss_list)
+                # if self.verbose:
+                msg = f'Batch size: {len(miss_list):>2}.Pending:{self.infer_queue.qsize():2}.'
+                msg += f' hit rate: {self.cache_hits / (self.total_requests + 1) :.2%}, total:{self.total_requests}.'
+                msg += f' cost:{(time.time() - self.start_time) * 1000 / self.finished_requests:.6f}sec per 1000 requests.'
                 print(msg, end='\r')
+
+            except queue.Empty:
+                continue
 
     def deliver_result(self, requests: list[QueueRequest], probs: Sequence[NDArray], values: Sequence[float]) -> None:
         # 结果交给请求方，通知request继续
@@ -165,14 +198,26 @@ class InferenceEngine:
     def shutdown(self) -> None:
         """清理资源，关闭推理线程"""
         self.running = False
-        if self._request_thread and self._request_thread.is_alive():
-            self._request_thread.join(timeout=1)
-            self._request_thread = None
-        if self._infer_thread and self._infer_thread.is_alive():
-            self._infer_thread.join(timeout=1)
-            self._infer_thread = None
-        if self.training:
-            self.transposition_table.clear()
+        if self.infer_model:
+            del self.infer_model
+            self.infer_model = None
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        # 清空队列
+        for q in [self.request_queue, self.preprocess_queue, self.infer_queue, self.result_queue]:
+            while not q.empty():
+                try:
+                    q.get_nowait()
+                except queue.Empty:
+                    break
+
+        for t in [self._collector_thread, self._preprocess_thread, self._infer_thread, self._result_thread]:
+            if t:
+                t.join()
+
+        self._collector_thread = self._preprocess_thread = self._infer_thread = self._result_thread = None
+
+        self.transposition_table.clear()
 
         # 尝试强制释放 numpy 内存回 OS,否则置换表的内存无法回收
         try:
