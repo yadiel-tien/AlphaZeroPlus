@@ -1,14 +1,18 @@
+import threading
+
+from inference.client import require_fit
 from utils.functions import register_sigint
 from train.selfplay import SelfPlayManager
 
 
 def main():
-    manager = SelfPlayManager(n_workers=40)
+    manager = SelfPlayManager(n_workers=200)
 
     register_sigint(manager.shutdown)
 
     try:
-        manager.run(n_games=100)
+        manager.run(100)
+        # manager.evaluation(455,50)
         manager.shutdown()
     except ConnectionError or FileNotFoundError:
         print("Server has been shut down,selfplay stopped!")
@@ -18,3 +22,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+    # require_fit(415,5000)

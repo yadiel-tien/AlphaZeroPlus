@@ -8,7 +8,7 @@ from network.functions import read_best_index
 def main():
     # 启动推理服务
     model_idx = read_best_index()
-    with TrainServer(model_idx, game_name) as server:
+    with TrainServer(model_idx, game_name, 200) as server:
         register_sigint(server.shutdown)
         while server.running:
             time.sleep(1)  # 阻塞主线程，避免退出

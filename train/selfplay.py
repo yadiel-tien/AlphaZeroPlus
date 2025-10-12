@@ -6,7 +6,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import numpy as np
 from numpy.typing import NDArray
 from tqdm import tqdm
-
 from env.chess import ChineseChess
 from env.functions import get_class
 from inference.functions import get_checkpoint_path
@@ -78,25 +77,34 @@ class SelfPlayManager:
 
         start = time.time()
         # 动态n_simulation,最大到1200
-        n_simulation = 200 + iteration * 600 // settings['max_iters']
+        # n_simulation = 200 + iteration * 600 // settings['max_iters']
+        n_simulation = 800
         stop_signal = threading.Event()
         futures = [self.pool.submit(self.self_play_worker, n_simulation, stop_signal) for _ in
-                   range(n_games + self.n_workers // 2)]
+                   range(int(n_games * 1.2))]
         data_count, win_count, lose_count, draw_count, truncate_count, completed = 0, 0, 0, 0, 0, 0
-        for f in tqdm(as_completed(futures), total=n_games, desc='Self playing'):
-            samples, winner = f.result()
-            completed += 1
-            win_count += winner == 0
-            lose_count += winner == 1
-            draw_count += winner == -1
-            truncate_count += winner == 2
-            data_count += len(samples)
+        with tqdm(total=n_games, desc='Self-play') as pbar:
+            for future in as_completed(futures):
+                try:
+                    samples, winner = future.result()
+                except Exception as e:
+                    self.logger.error(f'Exception occurred: {e}')
+                    stop_signal.set()
+                    break
+                pbar.update(1)
 
-            for sample in samples:
-                self.buffer.add(sample)
-            if completed >= n_games:
-                stop_signal.set()
-                break
+                completed += 1
+                win_count += winner == 0
+                lose_count += winner == 1
+                draw_count += winner == -1
+                truncate_count += winner == 2
+                data_count += len(samples)
+
+                for sample in samples:
+                    self.buffer.add(sample)
+                if completed >= n_games:
+                    stop_signal.set()
+                    break
 
         self.buffer.save()
         self.midgame_buffer.save()
@@ -205,22 +213,24 @@ class SelfPlayManager:
         # 额外提交20%任务，总数达到后停止，避免个别长时间等待
         stop_signal = threading.Event()
         futures = [self.pool.submit(self.evaluation_worker, iteration, stop_signal) for _ in
-                   range(n_games + self.n_workers // 2)]
+                   range(int(n_games * 1.2))]
         win_count, lose_count, draw_count, win_rate, total_steps = 0, 0, 0, 0.0, 0
         # 进度条
-        pbar = tqdm(as_completed(futures), total=n_games, desc=f'{iteration} VS {self.best_index}:')
-        for future in pbar:
-            winner, steps = future.result()
-            total_steps += steps
-            win_count += winner == 0
-            lose_count += winner == 1
-            draw_count += winner == -1
-            completed = win_count + lose_count + draw_count
-            win_rate = (win_count + draw_count / 2) / completed
-            pbar.set_postfix({'win_rate': f'{win_rate:.2%}'})  # 进度条后面添加当前胜率
-            if completed >= n_games:
-                stop_signal.set()
-                break
+        with tqdm(total=n_games, desc=f'{iteration} VS {self.best_index}') as pbar:
+            for future in as_completed(futures):
+                winner, steps = future.result()
+                pbar.update(1)
+                total_steps += steps
+                win_count += winner == 0
+                lose_count += winner == 1
+                draw_count += winner == -1
+                completed = win_count + lose_count + draw_count
+                win_rate = (win_count + draw_count / 2) / completed
+                pbar.set_postfix({'win_rate': f'{win_rate:.2%}'})  # 进度条后面添加当前胜率
+
+                if completed >= n_games:
+                    stop_signal.set()
+                    break
 
         self.logger.info(
             f'Model {iteration} VS {self.best_index}，胜:{win_count},负:{lose_count},平:{draw_count}, 胜率{win_rate:.2%}。')
@@ -258,8 +268,6 @@ class SelfPlayManager:
             mcts = competitors[env.player_to_move]
             mcts.run(n_simulation)
             action = int(np.argmax(mcts.root.child_n))
-            # pi = mcts.get_pi(0.1)  # 不使用argmax，为了增加一点随机性
-            # action = np.random.choice(len(pi), p=pi)
             env.step(action)
             # 双方都要对应剪枝
             for mcts in competitors:
@@ -270,10 +278,14 @@ class SelfPlayManager:
 
         for mcts in competitors:
             mcts.shutdown()
-
         if env.winner in (-1, 2):  # 和棋或被提前终止
             return env.winner, steps
+
         winner = model_list[env.winner]
+
+        env.render()
+        print(f'winner: {env.winner},tester win:{winner == iteration},steps: {steps}')
+
         if winner == iteration:
             return 0, steps
         else:

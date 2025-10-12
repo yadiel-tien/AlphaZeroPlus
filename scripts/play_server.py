@@ -61,7 +61,7 @@ def update(data: Any) -> Any:
             clients_live_time[pid] = time.time()
             player = ai_players[pid]
 
-        state = np.array(data['array'], dtype=np.float32)
+        state = np.array(data['array'], dtype=np.int32)
         last_action = data['action']
         player_to_move = data['player_to_move']
         player.update_state(state, last_action, player_to_move)
