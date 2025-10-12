@@ -140,6 +140,7 @@ class ChineseChessUI(GameUI):
             self.reverse_player_btn.draw()
         else:
             self.draw_player()
+            self.resign_btn.draw()
 
     def draw_victory_badge(self) -> None:
         winner = 'red' if self.env.winner == 0 else 'black' if self.env.winner == 1 else 'draw'

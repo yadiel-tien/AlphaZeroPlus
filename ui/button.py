@@ -23,7 +23,7 @@ class Button:
         pygame.draw.rect(self.image, color, (0, 0) + self.size, border_radius=15)
         pygame.draw.rect(self.image, self.colors[3], (0, 0) + self.size, border_radius=15, width=2)
 
-        font = pygame.font.Font(None, 36)
+        font = pygame.font.Font(None, int(self.size[1] * 0.72))
         text = font.render(self.text, True, (255, 255, 255))
         rect = text.get_rect(center=(self.size[0] // 2, self.size[1] // 2))
         self.image.blit(text, rect.topleft)

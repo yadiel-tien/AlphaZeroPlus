@@ -1,11 +1,10 @@
 from abc import ABC, abstractmethod
-from typing import TypeAlias, Literal, cast
+from typing import TypeAlias, Literal
 
 import pygame
 
 from env.chess import ChineseChess
 from env.env import BaseEnv
-from player.ai_client import AIClient
 from .button import Button
 from utils.timer import Timer
 from player.human import Human, Player
@@ -27,6 +26,7 @@ class GameUI(ABC):
         self.start_btn = Button("Start", self.start, (200, 680), color='green')
         self.reverse_player_btn = Button(f'First:{players[0].description}', self.reverse_player, pos=(200, 740),
                                          color='grey')
+        self.resign_btn = Button('Resign', self.resign, (20, 20), (60, 30), color='red')
         self.timers = {0: Timer(limit=60000, func=self.time_up), 1: Timer(limit=60000, func=self.time_up)}
         self.history = []
         self.screen = pygame.display.get_surface()
@@ -48,6 +48,7 @@ class GameUI(ABC):
                 self.cursor_grid = self._pos2grid(event.pos)
 
             if isinstance(player, Human):  # 处理人类玩家交互
+                self.resign_btn.handle_input(event)  # 投降按钮
                 if event.type == pygame.MOUSEBUTTONDOWN:
                     player.selected_grid = self.cursor_grid
                     self.handle_human_input()
@@ -84,6 +85,11 @@ class GameUI(ABC):
     @abstractmethod
     def play_place_sound(self, action: int) -> None:
         """执行action时播放的音效"""
+
+    def resign(self) -> None:
+        """投降"""
+        self.env.set_winner(1 - self.env.player_to_move)
+        self.set_win_status()
 
     def switch_side(self):
         current_player = self.env.player_to_move
