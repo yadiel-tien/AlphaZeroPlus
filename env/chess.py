@@ -92,14 +92,13 @@ class ChineseChess(BaseEnv):
             return GameResult.WIN if player_just_moved == 0 else GameResult.LOSE
 
         # 连将判负
-        diffs = []
-        for i in range(5):
-            diffs.append(np.equal(state[:, :, i], state[:, :, i + 1]))
-        if state[0, 0, -1] != 0 and np.array_equal(diffs[0], diffs[2]) \
-                and np.array_equal(diffs[0], diffs[4]) \
-                and np.array_equal(diffs[1], diffs[3]):
-            if cls.is_check(state, 1 - player_just_moved):
-                return GameResult.LOSE
+        diffs = (state[:, :, :5] == state[:, :, 1:6])
+        if state[0, 0, -1] != 0:
+            if np.all(diffs[:, :, 0] == diffs[:, :, 2]) and \
+                    np.all(diffs[:, :, 0] == diffs[:, :, 4]) and \
+                    np.all(diffs[:, :, 1] == diffs[:, :, 3]):
+                if cls.is_check(state, 1 - player_just_moved):
+                    return GameResult.LOSE
 
         # 100步未吃子判和
         if state[0, 0, -1] >= 100:
@@ -158,19 +157,15 @@ class ChineseChess(BaseEnv):
         board = cur_state[:, :, 0]
         # 当前盘面编码，0-13代表不同棋子，保证当前玩家始终是0-6
         if current_player == 0:
-            for i in range(14):
-                arr[:, :, i] = np.asarray(board == i, dtype=np.float32)
+            arr[:, :, :14] = np.eye(14, dtype=np.float32)[board]
         else:
-            for i in range(7):
-                arr[:, :, i] = np.asarray(board == i + 7, dtype=np.float32)
-            for i in range(7, 14):
-                arr[:, :, i] = np.asarray(board == i - 7, dtype=np.float32)
+            mapped_board = np.where(board < 7, board + 7, board - 7)
+            arr[:, :, :14] = np.eye(14, dtype=np.float32)[mapped_board]
 
         # 最近4步差分历史信息
-        for i in range(1, 6):
-            arr[:, :, 13 + i] = np.equal(cur_state[:, :, i - 1], cur_state[:, :, i]).astype(np.float32)
+        arr[:, :, 14:19] = (cur_state[:, :, :5] == cur_state[:, :, 1:6]).astype(np.float32)
         # 编码未吃子步数，超过100判和
-        arr[:, :, -1] = cur_state[:, :, -1].astype(np.float32) / 100.0
+        arr[:, :, -1] = cur_state[:, :, -1] / 100.0
 
         return arr
 
