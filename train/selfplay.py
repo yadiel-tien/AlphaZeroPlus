@@ -14,8 +14,8 @@ from utils.state_buffer import StateBuffer
 from utils.replay import ReplayBuffer
 from utils.config import game_name, settings
 from mcts.deepMcts import NeuronMCTS
-from inference.client import require_fit, require_train_server_shutdown, require_update_eval_model, \
-    require_restore_fit_model
+from inference.client import require_fit, require_train_server_shutdown, require_eval_model_update, \
+    require_model_removal, require_statistic_reset
 from network.functions import read_latest_index, save_best_index, read_best_index
 import random
 
@@ -46,13 +46,14 @@ class SelfPlayManager:
         iteration = 1 if iteration == -1 else iteration + 1
 
         while iteration < settings['max_iters']:
-            self.logger.info(f'Starting selfplay, iteration: {iteration}, best index: {self.best_index}.')
+            self.logger.info(f'Starting selfplay, iteration_to_remove: {iteration}, best index: {self.best_index}.')
             # 先保证buffer足够大
             while self.buffer.size < self.buffer.capacity * 0.4:
                 self.self_play(iteration=iteration, n_games=50)
                 self.logger.info(f'Collecting data.Current buffer size: {self.buffer.size}.')
 
             # 开始selfplay。新数据会进行积累，直到新模型产生。
+            require_statistic_reset()  # 重置engine的推理统计数据
             n_data = self.self_play(iteration=iteration, n_games=n_games)
 
             # 服务端进行模型训练，并保存参数，升级infer model
@@ -65,7 +66,7 @@ class SelfPlayManager:
                 self.logger.info(f'Checkpoint {path} does not exist. Retrying.')
                 time.sleep(1)
             # 评估模型，按结果更新模型
-            self.evaluation(iteration, n_games=50)
+            self.evaluation(iteration, n_games=100)
 
             # 训练网络，保存网络
             iteration += 1
@@ -77,8 +78,8 @@ class SelfPlayManager:
 
         start = time.time()
         # 动态n_simulation,最大到1200
-        # n_simulation = 200 + iteration * 600 // settings['max_iters']
-        n_simulation = 800
+        n_simulation = 200 + iteration * 1000 // settings['max_iters']
+        # n_simulation = 800
         stop_signal = threading.Event()
         futures = [self.pool.submit(self.self_play_worker, n_simulation, stop_signal) for _ in
                    range(int(n_games * 1.2))]
@@ -87,10 +88,12 @@ class SelfPlayManager:
             for future in as_completed(futures):
                 try:
                     samples, winner = future.result()
+                except (ConnectionError, FileNotFoundError):
+                    raise
                 except Exception as e:
                     self.logger.error(f'Exception occurred: {e}')
                     stop_signal.set()
-                    break
+                    raise
                 pbar.update(1)
 
                 completed += 1
@@ -164,6 +167,17 @@ class SelfPlayManager:
             else:
                 temperature = 0.1
             pi = mcts.get_pi(temperature)  # 获取mcts的概率分布pi
+            # debug
+            if np.isnan(pi).any():
+                self.logger.error(f'Found NaN in pi')
+                self.logger.error(env.get_board_str(env.state, colorize=False))
+                self.logger.error(f'current winner:{env.winner}')
+                self.logger.error(f'last move:{env.action2move(env.last_action)}')
+                self.logger.error(f'player to move:{env.player_to_move}')
+                self.logger.error(f'sum of child_n: {mcts.root.child_n.sum()}')
+                self.logger.error(f'sum of valid child_n: {mcts.root.child_n[mcts.root.valid_actions].sum()}')
+                self.logger.error(f'any of child_n is nan:{np.isnan(mcts.root.child_n).any()}')
+                self.logger.error(f'valid child_n: {mcts.root.child_n[mcts.root.valid_actions]}')
             action = np.random.choice(len(pi), p=pi)
             env.step(action)  # 执行落子
             mcts.apply_action(action)  # mcts也要根据action进行对应裁剪
@@ -219,6 +233,7 @@ class SelfPlayManager:
         with tqdm(total=n_games, desc=f'{iteration} VS {self.best_index}') as pbar:
             for future in as_completed(futures):
                 winner, steps = future.result()
+
                 pbar.update(1)
                 total_steps += steps
                 win_count += winner == 0
@@ -237,13 +252,13 @@ class SelfPlayManager:
         if win_rate >= 0.55:  # 通过测试
             self.best_index = iteration
             save_best_index(iteration)
-            require_update_eval_model(iteration)
+            require_eval_model_update(iteration)
             self.logger.info(
                 f'更新最佳模型为{iteration}，平均步数{total_steps // n_games}步，评估用时{time.time() - start_time:.2f}秒.')
         else:
             self.logger.info(
                 f'最佳模型仍旧为{self.best_index}，平均步数{total_steps // n_games}步， 评估用时{time.time() - start_time:.2f}秒.')
-            require_restore_fit_model(best_index=self.best_index, iteration=iteration)
+            require_model_removal(iteration_to_remove=iteration)
 
     def evaluation_worker(self, iteration: int, stop_signal: threading.Event) -> tuple[int, int]:
         """iteration对战最佳模型，随机先手顺序。
@@ -267,6 +282,7 @@ class SelfPlayManager:
         while not env.terminated and not env.truncated:
             mcts = competitors[env.player_to_move]
             mcts.run(n_simulation)
+
             action = int(np.argmax(mcts.root.child_n))
             env.step(action)
             # 双方都要对应剪枝

@@ -301,8 +301,17 @@ class NeuronMCTS:
             pi = np.zeros_like(child_n)
             pi[np.argmax(child_n)] = 1
         else:
-            child_n = child_n ** (1 / temperature)
-            pi = child_n / np.sum(child_n)
+            # 直接计算可能溢出，使用对数方法变换
+            log_n = np.log(child_n + 1e-8)
+            scaled = log_n / temperature
+            # 减最大值避免正溢出产生inf，负溢出=0不影响结果.
+            scaled -= np.max(scaled)
+            exp_n = np.exp(scaled)
+            pi = exp_n / np.sum(exp_n)
+
+            # 直接的计算方法，存在溢出风险，inf/inf会产生NaN
+            # child_n = child_n ** (1 / temperature)
+            # pi = child_n / np.sum(child_n)
 
         # 返回所有动作的概率，包括不合法的(概率0）
 
@@ -314,4 +323,6 @@ class NeuronMCTS:
 
     def shutdown(self):
         """关闭时清理socket"""
-        # node交叉
+        if self.sock:
+            self.sock.close()
+            self.sock = None

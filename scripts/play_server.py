@@ -89,7 +89,8 @@ def get_action(data: Any) -> Any:
         win_rate = float(player.win_rate)
         return jsonify({
             "action": action,
-            'win_rate': win_rate})
+            'win_rate': win_rate,
+            "model_id": player.model_id})
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": f'Failed to make move:{e}'}), 500

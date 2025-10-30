@@ -17,25 +17,33 @@ def require_fit(iteration: int, n_exp: int) -> str:
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
         s.connect(CONFIG['train_socket_path'])
         payload = {'command': 'fit',
-                   'iteration': iteration,
+                   'iteration_to_remove': iteration,
                    'n_exp': n_exp}
         send(s, payload)
         return recv(s)
 
 
-def require_update_eval_model(iteration: int) -> None:
+def require_eval_model_update(iteration: int) -> None:
     """训练时要求服务器同步学习模型参数到推理模型"""
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
         s.connect(CONFIG['train_socket_path'])
-        payload = {'command': 'update_eval_model', 'iteration': iteration}
+        payload = {'command': 'update_eval_model', 'iteration_update_to': iteration}
         send(s, payload)
 
 
-def require_restore_fit_model(best_index: int, iteration: int) -> None:
-    """训练时因学习模型未通过测验，要求其回滚。同步推理模型参数到训练模型"""
+def require_model_removal(iteration_to_remove: int) -> None:
+    """训练时因学习模型未通过测验，将对应模型文件删除"""
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
         s.connect(CONFIG['train_socket_path'])
-        payload = {'command': 'restore_fit_model', 'best_index': best_index, 'iteration': iteration}
+        payload = {'command': 'remove_failed_model', 'iteration_to_remove': iteration_to_remove}
+        send(s, payload)
+
+
+def require_statistic_reset() -> None:
+    """重置统计数据"""
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+        s.connect(CONFIG['train_socket_path'])
+        payload = {'command': 'reset_statistic'}
         send(s, payload)
 
 

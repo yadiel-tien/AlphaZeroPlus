@@ -13,11 +13,11 @@ game_name: EnvName = 'ChineseChess'
 
 
 class Game:
-    def __init__(self):
+    def __init__(self, model_idx: int) -> None:
         pygame.init()
         self.screen = pygame.display.set_mode(settings['screen_size'])
         pygame.display.set_caption(game_name)
-        self.players = [Human(game_name), AIClient(523, game_name)]
+        self.players = [Human(game_name), AIClient(model_idx, game_name)]
         if game_name == 'Gomoku':
             self.board = GomokuUI(self.players)
         else:
@@ -42,7 +42,12 @@ class Game:
 
 
 if __name__ == '__main__':
-    game = Game()
+    try:
+        index = int(sys.argv[1])
+    except ValueError:
+        print(sys.argv)
+        index = 666
+    game = Game(index)
     game.play()
     game.shutdown()
     pygame.quit()

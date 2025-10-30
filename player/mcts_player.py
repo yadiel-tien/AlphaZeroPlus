@@ -41,7 +41,7 @@ class MCTSPlayer(Player):
             self.mcts.apply_opponent_action(state, last_action)
         # start = time.time()
         self.mcts.run(self._n_simulation)
-        # print(f'{self._iteration} iteration took {time.time() - start:.2f} seconds')
+        # print(f'{self._iteration} iteration_to_remove took {time.time() - start:.2f} seconds')
         self.pending_action = self.mcts.choose_action()
         self._thinking = False
 

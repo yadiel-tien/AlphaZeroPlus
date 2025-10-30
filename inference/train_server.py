@@ -22,12 +22,14 @@ from .request import SocketRequest
 
 class TrainServer(InferServer):
     def __init__(self, model_id: int, env_name: EnvName, max_listen_workers: int = 100):
-        super().__init__(model_id, env_name, max_listen_workers, verbose=True)
+        super().__init__(model_id, env_name, max_listen_workers)
         self.fit_logger = get_logger('fit')
         # 模型
-        self.fit_model = Net(self.infer_model.config, eval_model=False)
+        self.fit_model = Net(self.eval_model.config, eval_model=False)
         # 优化器和学习率调解器
-        self.optimizer = torch.optim.Adam(self.fit_model.parameters(), lr=1e-3, weight_decay=1e-4)
+        self.optimizer = torch.optim.Adam(self.fit_model.parameters(),
+                                          lr=1e-3,
+                                          weight_decay=1e-4)
         self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer=self.optimizer,
                                                                     T_max=settings['max_iters'], eta_min=1e-5)
         # 训练步数计数器
@@ -89,7 +91,7 @@ class TrainServer(InferServer):
             except Exception as e:
                 if not self.running:
                     break
-                print(e)
+                self.fit_logger.error(e)
 
     def handle_client(self, client_sock: socket.socket) -> None:
         """socket接收到state，通过队列发送给推理线程"""
@@ -101,23 +103,15 @@ class TrainServer(InferServer):
                     self.request_queue.put(SocketRequest(cast(NDArray, data), client_sock))
                 elif isinstance(data, dict) and 'command' in data:
                     if data['command'] == 'fit':  # 训练模型
-                        self.fit(client_sock, n_collected_samples=data['n_exp'], iteration=data['iteration'])
+                        self.fit(client_sock, n_collected_samples=data['n_exp'], iteration=data['iteration_to_remove'])
                     elif data['command'] == 'shutdown':  # 关闭整个train server
                         self.shutdown()
                     elif data['command'] == 'update_eval_model':  # 训练有效，更新推理模型
-                        with self.model_lock:
-                            self.infer_model.load_state_dict(self.fit_model.state_dict())
-                            self.model_index = data['iteration']
-                        # 清空缓存
-                        self.clear_flag = True
-                        self.fit_logger.info(f'Evaluation model updated to {data['iteration']}.')
-                    elif data['command'] == 'restore_fit_model':  # 训练失败，回滚学习模型
-                        # self.load_checkpoint(data['best_index'])
-                        path = get_checkpoint_path(self.env_name, data['iteration'])
-                        if os.path.exists(path):
-                            os.remove(path)
-                        self.fit_logger.info(
-                            f'Model{data['iteration']} does not pass evaluation, checkpoint was deleted.')
+                        self.update_eval_model(data['iteration_update_to'])
+                    elif data['command'] == 'remove_failed_model':  # 训练失败，删除淘汰模型
+                        self.remove_failed_model(data['iteration_to_remove'])
+                    elif data['command'] == 'reset_statistic':  # 重置统计数据
+                        self.reset_statistic()
                     else:
                         self.fit_logger.info(f'[-] Received unsupported command: {data["command"]}')
                 else:
@@ -128,6 +122,21 @@ class TrainServer(InferServer):
                 break
         client_sock.close()
 
+    def remove_failed_model(self, iteration_to_remove: int) -> None:
+        """移除未通过测试的模型"""
+        path = get_checkpoint_path(self.env_name, iteration_to_remove)
+        if os.path.exists(path):
+            os.remove(path)
+        self.fit_logger.info(
+            f"Model{iteration_to_remove} does not pass evaluation, checkpoint was deleted.")
+
+    def update_eval_model(self, iteration: int) -> None:
+        """模型通过测试，将eval model参数同步到fit model"""
+        with self.model_lock:
+            self.eval_model.load_state_dict(self.fit_model.state_dict())
+            self.model_index = iteration
+        self.fit_logger.info(f"Evaluation model updated to {iteration}.")
+
     @property
     def socket_name(self) -> str:
         return self._server_sock.getsockname()
@@ -137,6 +146,7 @@ class TrainServer(InferServer):
         start = time.time()
         # 加载最新buffer
         self.buffer.load()
+        # 根据获取的数据和相关设置计算训练epoch
         n_training_steps = n_collected_samples * settings['augment_times'] * CONFIG[
             'training_steps_per_sample'] // self.buffer.batch_size
         for step in range(n_training_steps):
@@ -202,8 +212,9 @@ class TrainServer(InferServer):
         self.save_checkpoint(iteration)
 
         duration = time.time() - start
-        self.fit_logger.info(f"iteration{iteration}:{n_training_steps}轮训练完成，共用时{duration:.2f}秒。")
-        # 通知服务端学习完成，可以进行评估
+        self.fit_logger.info(f"iteration_to_remove{iteration}:{n_training_steps}轮训练完成，共用时{duration:.2f}秒。")
+
+        # 通知trainer学习完成，可以进行评估
         send(sock, 'Fit done!')
 
     def shutdown(self) -> None:

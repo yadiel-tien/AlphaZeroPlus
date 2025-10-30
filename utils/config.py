@@ -75,9 +75,9 @@ CONFIG: AppConfig = {
         'tensor_shape': (10, 9, 20),
         'state_shape': (10, 9, 7),
         'img_path': './graphics/chess/board.jpeg',
-        'tao_switch_steps': 30,
+        'tao_switch_steps': 50,
         'augment_times': 2,
-        'max_iters': 600,
+        'max_iters': 1000,
         'default_net': {
             'in_channels': 20,  # 输入通道数
             'n_filters': 256,  # 卷积层filter数量

@@ -27,7 +27,7 @@ class GameUI(ABC):
         self.reverse_player_btn = Button(f'First:{players[0].description}', self.reverse_player, pos=(200, 740),
                                          color='grey')
         self.resign_btn = Button('Resign', self.resign, (20, 20), (60, 30), color='red')
-        self.timers = {0: Timer(limit=60000, func=self.time_up), 1: Timer(limit=60000, func=self.time_up)}
+        self.timers = {0: Timer(limit=100000, func=self.time_up), 1: Timer(limit=100000, func=self.time_up)}
         self.history = []
         self.screen = pygame.display.get_surface()
         self.image = pygame.image.load(img_path)

@@ -17,14 +17,14 @@ from .request import SocketRequest
 
 
 class InferServer(InferenceEngine):
-    def __init__(self, model_id: int, env_name: EnvName, max_listen_workers: int = 100, verbose=False):
+    def __init__(self, model_id: int, env_name: EnvName, max_listen_workers: int = 100):
         self.max_listen_workers = max_listen_workers
         self._listen_thread: threading.Thread | None = None
         self._listen_pool: ThreadPoolExecutor | None = None
         self._server_sock: socket.socket | None = None
         self.client_count = 0
         self.connection_lock = threading.Lock()
-        super().__init__(model_id, env_name, verbose=verbose)
+        super().__init__(model_id, env_name)
 
     def start(self) -> None:
         """启动推理线程和监听进程"""

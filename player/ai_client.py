@@ -74,6 +74,7 @@ class AIClient(Player):
 
         self.pending_action = response.get('action')
         self.win_rate = response.get('win_rate')
+        self.model_id = response.get('model_id')
         self.status = ClientStatus.IDLE
         self.is_thinking = False
 
