@@ -133,7 +133,7 @@ class Gomoku(BaseEnv):
         print(self.get_board_str(self.state, self.player_to_move))
 
     @classmethod
-    def get_board_str(cls, state: NDArray, player_to_move: int) -> str:
+    def get_board_str(cls, state: NDArray, player_to_move: int, colorize=True) -> str:
         """打印棋盘"""
         board_str = '\n'
         col_indices = [str(i + 1) for i in range(cls.shape[1])]
@@ -145,7 +145,9 @@ class Gomoku(BaseEnv):
             board_str += f'{i + 1:>2}  ' + '  '.join(
                 ['X' if cell[player_to_move] else 'O' if cell[1 - player_to_move] else '.'
                  for cell in row]) + '\n'
-            # 用红色显示玩家 1 的棋子 (1)
+        if not colorize:
+            return board_str
+        # 用红色显示玩家 1 的棋子 (1)
         board_str = re.sub(r'\bX\b', '\033[31mX\033[0m', board_str)
         # 用蓝色显示玩家 2 的棋子 (2)
         board_str = re.sub(r'\bO\b', '\033[34mO\033[0m', board_str)

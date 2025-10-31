@@ -7,7 +7,6 @@ from typing import Self, cast
 import numpy as np
 from numpy.typing import NDArray
 
-from env.chess import ChineseChess
 from env.env import BaseEnv
 from inference.client import send_request, apply_for_socket_path
 from utils.config import CONFIG
@@ -129,9 +128,9 @@ class NeuronNode:
         state = self.env.convert_to_network(self.state, self.player_to_move)
         # 发送到推理进程推理，获取policy和value
         policy, value = send_request(sock, state, cast(EnvName, self.env.__name__), infer_queue, is_self_play)
-        # 象棋采用了红黑交换，需要对应反转概率
-        if self.player_to_move == 1 and self.env == ChineseChess:
-            policy = ChineseChess.switch_side_policy(policy)
+        # 象棋采用了红黑交换，需要对应反转概率。类似象棋这样的env都要有switch_side_policy函数实现该功能
+        if self.player_to_move == 1 and hasattr(self.env,"switch_side_policy"):
+            policy = self.env.switch_side_policy(policy)
 
         # 概率归一化
         scale = policy.sum()

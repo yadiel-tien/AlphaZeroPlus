@@ -313,7 +313,7 @@ class ChineseChess(BaseEnv):
             cls.dest_func[i] = cls.dest_func[i - 7]
 
     @classmethod
-    def get_board_str(cls, state: NDArray, colorize: bool = True) -> str:
+    def get_board_str(cls, state: NDArray, player_to_move: int, colorize: bool = True) -> str:
         """打印棋盘"""
         board_str = '\n ' + ''.join([f'{i:^5}' for i in range(9)]) + '\n'
         for i, row in enumerate(state[:, :, 0]):
@@ -329,11 +329,11 @@ class ChineseChess(BaseEnv):
         return board_str
 
     def render(self) -> None:
-        print(self.get_board_str(self.state))
+        print(self.get_board_str(self.state, self.player_to_move))
 
     @classmethod
     def handle_human_input(cls, state: NDArray, last_action: int, player_to_move: int) -> int:
-        cls.get_board_str(state)
+        cls.get_board_str(state, player_to_move)
         valid_actions = cls.get_valid_actions(state, player_to_move)
         while True:
             txt = input('输入一个4位数字，前两位代表当前棋子位置，后两位代表移动到的位置，例如红方炮7平4为7774。\n')

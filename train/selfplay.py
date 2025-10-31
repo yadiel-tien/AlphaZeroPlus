@@ -6,7 +6,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import numpy as np
 from numpy.typing import NDArray
 from tqdm import tqdm
-from env.chess import ChineseChess
 from env.functions import get_class
 from inference.functions import get_checkpoint_path
 from utils.logger import get_logger
@@ -34,10 +33,6 @@ class SelfPlayManager:
         self.midgame_buffer.load()
         self.opening_buffer.load()
         self.debug_logger = get_logger('debug')
-
-    def run_bi_game(self, n_games: int) -> None:
-        """交替训练两个游戏，使网络具有掌握两种游戏的泛化能力"""
-        pass
 
     def run(self, n_games: int) -> None:
         """训练入口
@@ -130,9 +125,9 @@ class SelfPlayManager:
 
         env = self.env_class()
         env.reset()
-        # 25%概率从残局开始
+        # 30%概率从残局开始
         start_from_beginning = True
-        if random.random() < 0.5 and len(self.midgame_buffer) > 50:
+        if random.random() < 0.3 and len(self.midgame_buffer) > 50:
             start_from_beginning = False
             env.state = self.midgame_buffer.sample()
 
@@ -153,8 +148,8 @@ class SelfPlayManager:
             # 采集原始概率分布。象棋需要交换红黑双方位置对应的概率分布
 
             pi_target = mcts.get_pi(1.0)
-            if env.player_to_move == 1 and isinstance(env, ChineseChess):
-                pi_target = ChineseChess.switch_side_policy(pi_target)
+            if env.player_to_move == 1 and hasattr(env, "switch_side_policy"):
+                pi_target = env.switch_side_policy(pi_target)
             # 象棋表示state和神经网络state不一样，需要转换。五子棋也进行了接口匹配
             state = env.convert_to_network(env.state, env.player_to_move)
             # q代表对上个玩家的回报，-q代表当前玩家的回报
@@ -170,7 +165,7 @@ class SelfPlayManager:
             # debug
             if np.isnan(pi).any():
                 self.logger.error(f'Found NaN in pi')
-                self.logger.error(env.get_board_str(env.state, colorize=False))
+                self.logger.error(env.get_board_str(env.state, env.player_to_move, colorize=False))
                 self.logger.error(f'current winner:{env.winner}')
                 self.logger.error(f'last move:{env.action2move(env.last_action)}')
                 self.logger.error(f'player to move:{env.player_to_move}')

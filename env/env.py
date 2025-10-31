@@ -178,3 +178,8 @@ class BaseEnv(gym.Env, ABC):
         :param data: (state,pi,q)
         :return 增强后的列别[(state,pi,q)]"""
         ...
+
+    @classmethod
+    @abstractmethod
+    def get_board_str(cls, state: NDArray, player_to_move: int, colorize: bool = True) -> str:
+        ...
