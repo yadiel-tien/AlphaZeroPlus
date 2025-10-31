@@ -75,7 +75,7 @@ CONFIG: AppConfig = {
         'tensor_shape': (10, 9, 20),
         'state_shape': (10, 9, 7),
         'img_path': './graphics/chess/board.jpeg',
-        'tao_switch_steps': 50,
+        'tao_switch_steps': 30,
         'augment_times': 2,
         'max_iters': 1000,
         'default_net': {

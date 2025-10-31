@@ -65,7 +65,7 @@ class InferenceEngine:
         while self.running:
             batch_size = 1
             threshold = 32
-            max_size = 50
+            max_size = 64
             n_pending = self.infer_queue.qsize()
             delay = 1e-4 + 1e-3 * n_pending  # 根据queue排队情况，动态调整
             phase = 'ramp up'
@@ -133,6 +133,7 @@ class InferenceEngine:
 
                 self.finished_requests += len(requests)
                 msg = f'Batch size: {len(requests):>2}.Pending:{self.infer_queue.qsize():2}.'
+                msg += f' total: {self.finished_requests:8}.'
                 msg += f' cost:{(time.time() - self.start_time) * 1000 / self.finished_requests:.6f}sec per 1000 requests.'
                 print(msg, end='\r')
 

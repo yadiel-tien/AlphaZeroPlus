@@ -21,7 +21,7 @@ def random_mirror_state_ip(state: NDArray, env_name: str) -> tuple[NDArray, int]
         变换后的 ndarray"""
     if env_name == 'ChineseChess':
         # 象棋只支持左右翻转
-        if random.random() < 0.5 :
+        if random.random() < 0.5:
             return apply_symmetry(state, 4), 4
 
         return state, 0
@@ -120,6 +120,7 @@ def reverse_board_policy(policy: NDArray, idx: int, board_shape: tuple[int, ...]
 
 
 def test_apply_symmetry():
+    """测试用函数"""
     # 构造简单 2D 棋盘（Gomoku policy 示例）
     board_2d = np.array([
         [1, 2, 3],
