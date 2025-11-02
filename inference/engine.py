@@ -65,7 +65,7 @@ class InferenceEngine:
         while self.running:
             batch_size = 1
             threshold = 32
-            max_size = 64
+            max_size = 128
             n_pending = self.infer_queue.qsize()
             delay = 1e-4 + 1e-3 * n_pending  # 根据queue排队情况，动态调整
             phase = 'ramp up'

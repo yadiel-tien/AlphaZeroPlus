@@ -41,7 +41,7 @@ class SelfPlayManager:
         iteration = 1 if iteration == -1 else iteration + 1
 
         while iteration < settings['max_iters']:
-            self.logger.info(f'Starting selfplay, iteration_to_remove: {iteration}, best index: {self.best_index}.')
+            self.logger.info(f'Starting selfplay, iteration: {iteration}, best index: {self.best_index}.')
             # 先保证buffer足够大
             while self.buffer.size < self.buffer.capacity * 0.4:
                 self.self_play(iteration=iteration, n_games=50)
@@ -131,10 +131,10 @@ class SelfPlayManager:
             start_from_beginning = False
             env.state = self.midgame_buffer.sample()
 
-        mcts = NeuronMCTS.make_selfplay_mcts(state=env.state,
-                                             env_class=self.env_class,
-                                             last_action=env.last_action,
-                                             player_to_move=env.player_to_move)
+        mcts = NeuronMCTS.make_parallel_selfplay_mcts(state=env.state,
+                                                      env_class=self.env_class,
+                                                      last_action=env.last_action,
+                                                      player_to_move=env.player_to_move)
         steps = 0
         samples = []
         while not env.terminated and not env.truncated:
@@ -143,7 +143,7 @@ class SelfPlayManager:
             if steps == 50 and start_from_beginning and (0.4 < mcts.root.win_rate < 0.6):
                 self.midgame_buffer.append(env.state)
 
-            mcts.run(n_simulation)  # 模拟
+            mcts.parallel_run(n_simulation)  # 模拟
 
             # 采集原始概率分布。象棋需要交换红黑双方位置对应的概率分布
 
@@ -244,7 +244,7 @@ class SelfPlayManager:
 
         self.logger.info(
             f'Model {iteration} VS {self.best_index}，胜:{win_count},负:{lose_count},平:{draw_count}, 胜率{win_rate:.2%}。')
-        if win_rate >= 0.55:  # 通过测试
+        if win_rate >= 0.5:  # 通过测试
             self.best_index = iteration
             save_best_index(iteration)
             require_eval_model_update(iteration)

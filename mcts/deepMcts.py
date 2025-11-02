@@ -115,20 +115,20 @@ class NeuronNode:
         action = self.valid_actions[index]
         return self.get_child(int(action))
 
-    def evaluate(self, infer_queue: queue.Queue, sock: socket.socket, lock: threading.Lock,
+    def evaluate(self, infer_queue: queue.Queue, sock: socket.socket,
                  is_self_play=False) -> float:
         """评估当前state，返回其对上个玩家的平均奖励，以便上个玩家选择奖励最大的动作"""
         # 因为选择时会从子节点中选择最大的，直接使用上个玩家视角，选择其奖励最大的。
         # check_winner函数也要求使用落子玩家的视角
 
-        state = self.prepare_inference()
-        if not state:
+        state = self._get_inference_state()
+        if state is None:
             return float(self.leaf_reward)
         # 发送到推理进程推理，获取policy和value
         policy, value = send_request(sock, state, cast(EnvName, self.env.__name__), infer_queue, is_self_play)
-        return self.apply_inference_result(policy, value, is_self_play)
+        return self._apply_inference_result(policy, value, is_self_play)
 
-    def prepare_inference(self) -> NDArray | None:
+    def _get_inference_state(self) -> NDArray | None:
         # 避免重复 check winner
         if self.leaf_reward == GameResult.ONGOING:
             self.leaf_reward = self.env.check_winner(self.state,
@@ -138,7 +138,7 @@ class NeuronNode:
             return None
         return self.env.convert_to_network(self.state, self.player_to_move)
 
-    def apply_inference_result(self, policy: NDArray, value: float, is_self_play=False) -> float:
+    def _apply_inference_result(self, policy: NDArray, value: float, is_self_play=False) -> float:
         if self.player_to_move == 1 and hasattr(self.env, "switch_side_policy"):
             policy = self.env.switch_side_policy(policy)
 
@@ -158,13 +158,13 @@ class NeuronNode:
         # 若value拟合的q，代表对上个玩家的平均奖励，则无需取反
         return -value
 
-    def back_propagate(self, result: float) -> None:
+    def back_propagate_with_virtual_loss(self, result: float) -> None:
         """反向传播评估结果"""
         node = self
         while not isinstance(node, DummyNode):
             if isinstance(node.parent, DummyNode):
-                # with node.parent.lock:
-                node.w += result + 1
+                with node.parent.lock:
+                    node.w += result + 1
             else:
                 # 原子操作，撤销virtual loss与BP同时进行，N不变，w+=result+1
                 np.add.at(node.parent.child_w, node.last_action, result + 1)
@@ -172,12 +172,21 @@ class NeuronNode:
             result = -result
             node = node.parent
 
+    def back_propagate(self, result: float) -> None:
+        """反向传播评估结果"""
+        node = self
+        while not isinstance(node, DummyNode):
+            node.w += result
+            node.n += 1
+            result = -result
+            node = node.parent
+
     def add_virtual_loss(self):
         """临时添加一次最差访问，降低该节点吸引力，避免并行线程访问同一节点"""
         if isinstance(self.parent, DummyNode):
-            # with self.parent.lock:
-            self.n += 1.0
-            self.w -= 1.0
+            with self.parent.lock:
+                self.n += 1.0
+                self.w -= 1.0
         else:
             np.add.at(self.parent.child_n, self.last_action, 1.0)
             np.add.at(self.parent.child_w, self.last_action, -1.0)
@@ -219,9 +228,11 @@ class NeuronMCTS:
         )
         self.infer_queue: queue.Queue | None = None
         self.sock: socket.socket | None = None
+        self.thread_local = None
         self.is_self_play = False
-        self.pool = ThreadPoolExecutor(max_workers=8)
-        self.lock = threading.Lock()
+        self.pool = None
+        self.socks: list[socket.socket] = []
+        self.sock_lock: threading.Lock | None = None
 
     @classmethod
     def make_queue_mcts(cls,
@@ -246,6 +257,23 @@ class NeuronMCTS:
         mcts.is_self_play = True
         mcts.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         mcts.sock.connect(CONFIG['train_socket_path'])
+        return mcts
+
+    @classmethod
+    def make_parallel_selfplay_mcts(cls,
+                                    env_class: type[BaseEnv],
+                                    state: NDArray,
+                                    last_action: int,
+                                    player_to_move: int,
+                                    max_workers: int = 8) -> Self:
+        """训练时使用的mcts，直接将state通过socket发送至train server。可以用3.14 no gil运行mcts。需另外启动train server"""
+        mcts = cls(state, env_class, last_action, player_to_move)
+        mcts.is_self_play = True
+        mcts.pool = ThreadPoolExecutor(max_workers=max_workers)
+        mcts.thread_local = threading.local()
+        mcts.socks = []
+        mcts.sock_lock = threading.Lock()
+
         return mcts
 
     @classmethod
@@ -304,28 +332,38 @@ class NeuronMCTS:
 
     def run(self, n_simulation=1000) -> None:
         """进行MCTS模拟，模拟完成后可根据孩子节点状态选择优势动作"""
-        futures = [self.pool.submit(self.simulation_worker) for _ in range(n_simulation)]
-        done, not_done = wait(futures, return_when=ALL_COMPLETED)
+        for _ in range(n_simulation):
+            node = self.root
+            # selection & Expansion
+            while node.is_evaluated:
+                node = node.select()
+            # Evaluation
+            value = node.evaluate(self.infer_queue, self.sock, is_self_play=self.is_self_play)
+            # Back Propagation
+            node.back_propagate(value)
 
-        for future in done:
-            # 如果任何一个模拟线程抛出异常，这里会重新抛出它，阻止程序看似“安静退出”
-            if future.exception() is not None:
-                raise future.exception()
+    def parallel_run(self, n_simulation=1000) -> None:
+        """添加virtual loss，并行模拟"""
+        futures = [self.pool.submit(self.simulation_worker) for _ in range(n_simulation)]
+        wait(futures, return_when=ALL_COMPLETED)
 
     def simulation_worker(self) -> None:
+        """MCTS模拟，添加了虚拟损失以供并行"""
         node = self.root
         node.add_virtual_loss()
-        # selection & Expansion
         while node.is_evaluated:
             node = node.select()
             node.add_virtual_loss()
-        # Evaluation
-        value = node.evaluate(self.infer_queue, self.sock, self.lock, is_self_play=self.is_self_play)
-        # Back Propagation
-        node.back_propagate(value)
+            # Evaluation
+        if not hasattr(self.thread_local, 'sock'):
+            self.thread_local.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            self.thread_local.sock.connect(CONFIG['train_socket_path'])
+            with self.sock_lock:
+                self.socks.append(self.thread_local.sock)
 
-    def parallel_worker(self, batch_size: int) -> None:
-        """<UNK>MCTS<UNK>"""
+        value = node.evaluate(self.infer_queue, self.thread_local.sock, is_self_play=self.is_self_play)
+        # Back Propagation
+        node.back_propagate_with_virtual_loss(value)
 
     def get_pi(self, temperature=1.0) -> NDArray[np.float32]:
         """将不同孩子节点的访问次数转换为概率分布
@@ -360,8 +398,17 @@ class NeuronMCTS:
         return f'root=({self.root.__repr__()})'
 
     def shutdown(self):
-        """关闭时清理socket"""
+        """清理资源"""
+        # 单sock串行模拟
         if self.sock:
             self.sock.close()
             self.sock = None
-        self.pool.shutdown()
+        # 多socket多线程并行模拟
+        if self.socks:
+            with self.sock_lock:
+                for sock in self.socks:
+                    sock.close()
+                self.socks.clear()
+        # 关闭线程池
+        if self.pool:
+            self.pool.shutdown()
