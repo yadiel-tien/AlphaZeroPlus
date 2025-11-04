@@ -133,6 +133,7 @@ class InferenceEngine:
 
                 self.finished_requests += len(requests)
                 msg = f'Batch size: {len(requests):>2}.Pending:{self.infer_queue.qsize():2}.'
+                msg += f' total{self.finished_requests:>8}.'
                 msg += f' cost:{(time.time() - self.start_time) * 1000 / self.finished_requests:.6f}sec per 1000 requests.'
                 print(msg, end='\r')
 

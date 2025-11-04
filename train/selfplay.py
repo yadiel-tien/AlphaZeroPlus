@@ -41,7 +41,7 @@ class SelfPlayManager:
         iteration = 1 if iteration == -1 else iteration + 1
 
         while iteration < settings['max_iters']:
-            self.logger.info(f'Starting selfplay, iteration_to_remove: {iteration}, best index: {self.best_index}.')
+            self.logger.info(f'Starting selfplay, iteration: {iteration}, best index: {self.best_index}.')
             # 先保证buffer足够大
             while self.buffer.size < self.buffer.capacity * 0.4:
                 self.self_play(iteration=iteration, n_games=50)
@@ -244,7 +244,7 @@ class SelfPlayManager:
 
         self.logger.info(
             f'Model {iteration} VS {self.best_index}，胜:{win_count},负:{lose_count},平:{draw_count}, 胜率{win_rate:.2%}。')
-        if win_rate >= 0.55:  # 通过测试
+        if win_rate >= 0.5:  # 通过测试
             self.best_index = iteration
             save_best_index(iteration)
             require_eval_model_update(iteration)

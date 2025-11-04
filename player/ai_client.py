@@ -28,7 +28,7 @@ class AIClient(Player):
         self.time_stamp = 0
         self.session = requests.Session()
         self.alive = True
-        self.win_rate = 0.5
+        self.win_rate = -1.0
         self.status = ClientStatus.UNINITIATED
 
     @property

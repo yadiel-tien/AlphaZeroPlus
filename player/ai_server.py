@@ -14,7 +14,7 @@ class AIServer(Player):
         self._n_simulation = n_simulation
         self.mcts: NeuronMCTS | None = None
         self.verbose = verbose  # verbose=True打印日志信息
-        self.win_rate = 0.5
+        self.win_rate = -1.0  # -1代表无数据
 
     def _print_verbose(self, msg: str) -> None:
         """只在verbose 模式下打印"""
@@ -73,7 +73,7 @@ class AIServer(Player):
     def reset(self) -> None:
         super().reset()
         self.shutdown()
-        self.win_rate = 0.5
+        self.win_rate = -1.0
 
     def shutdown(self) -> None:
         if self.mcts:

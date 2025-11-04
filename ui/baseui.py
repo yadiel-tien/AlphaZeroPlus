@@ -163,8 +163,9 @@ class GameUI(ABC):
 
             if hasattr(player, 'win_rate'):
                 win_rate = player.win_rate
+                win_rate_text = f'{win_rate:.2%}' if win_rate != -1.0 else '--'
                 font = pygame.font.Font(None, 30)
-                win_rate_label = font.render(f'win rate:{win_rate:.2%} ', True, 'gray')
+                win_rate_label = font.render(f'win rate:{win_rate_text} ', True, 'gray')
                 self.screen.blit(win_rate_label, (220, desc_rect.bottom + 10))
 
     def _pos2grid(self, pos: tuple[int, int]) -> tuple[int, int] | None:

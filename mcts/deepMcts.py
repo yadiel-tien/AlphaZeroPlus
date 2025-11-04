@@ -50,7 +50,7 @@ class NeuronNode:
 
     @property
     def win_rate(self) -> float:
-        return (self.w / self.n + 1) / 2 if self.n > 0 else 0.5
+        return (self.w / self.n + 1) / 2 if self.n > 0 else -1.0
 
     @property
     def depth(self) -> int:
@@ -129,7 +129,7 @@ class NeuronNode:
         # 发送到推理进程推理，获取policy和value
         policy, value = send_request(sock, state, cast(EnvName, self.env.__name__), infer_queue, is_self_play)
         # 象棋采用了红黑交换，需要对应反转概率。类似象棋这样的env都要有switch_side_policy函数实现该功能
-        if self.player_to_move == 1 and hasattr(self.env,"switch_side_policy"):
+        if self.player_to_move == 1 and hasattr(self.env, "switch_side_policy"):
             policy = self.env.switch_side_policy(policy)
 
         # 概率归一化
@@ -241,7 +241,7 @@ class NeuronMCTS:
                 break
             except (ConnectionRefusedError, FileNotFoundError):
                 time.sleep(0.1)
-                if time.time() - start > 5:
+                if time.time() - start > 15:
                     raise RuntimeError(f"Connection to {sock_path} time out,mcts setup failed!")
         return mcts
 
