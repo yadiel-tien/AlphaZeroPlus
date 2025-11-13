@@ -44,7 +44,7 @@ class Game:
 if __name__ == '__main__':
     try:
         index = int(sys.argv[1])
-    except ValueError:
+    except (ValueError, IndexError):
         print(sys.argv)
         index = 666
     game = Game(index)

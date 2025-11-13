@@ -53,7 +53,7 @@ class SelfPlayManager:
 
             # 服务端进行模型训练，并保存参数，升级infer model
             done = require_fit(iteration, n_data)
-            print(done)
+            self.logger.info(f'Received message :{done}.')
 
             # 以防模型还没创建好
             path = get_checkpoint_path(game_name, iteration=iteration)
@@ -127,7 +127,7 @@ class SelfPlayManager:
         env.reset()
         # 30%概率从残局开始
         start_from_beginning = True
-        if random.random() < 0.3 and len(self.midgame_buffer) > 50:
+        if random.random() < 0.7 and len(self.midgame_buffer) > 50:
             start_from_beginning = False
             env.state = self.midgame_buffer.sample()
 
@@ -227,7 +227,12 @@ class SelfPlayManager:
         # 进度条
         with tqdm(total=n_games, desc=f'{iteration} VS {self.best_index}') as pbar:
             for future in as_completed(futures):
-                winner, steps = future.result()
+                if future.exception() is not None:
+                    self.logger.info(f'exception:{future.exception()}' )
+                    stop_signal.set()
+                    raise future.exception()
+                else:
+                    winner, steps = future.result()
 
                 pbar.update(1)
                 total_steps += steps
@@ -244,7 +249,7 @@ class SelfPlayManager:
 
         self.logger.info(
             f'Model {iteration} VS {self.best_index}，胜:{win_count},负:{lose_count},平:{draw_count}, 胜率{win_rate:.2%}。')
-        if win_rate >= 0.5:  # 通过测试
+        if win_rate > 0.5:  # 通过测试
             self.best_index = iteration
             save_best_index(iteration)
             require_eval_model_update(iteration)

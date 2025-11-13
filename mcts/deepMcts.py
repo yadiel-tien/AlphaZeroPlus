@@ -1,7 +1,6 @@
 import collections
 import queue
 import socket
-import time
 from typing import Self, cast
 
 import numpy as np
@@ -233,16 +232,7 @@ class NeuronMCTS:
         mcts = cls(state, env_class, last_action, player_to_move)
         sock_path = apply_for_socket_path(model_id, env_class.__name__)
         mcts.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        # 需要等服务端建立好文件
-        start = time.time()
-        while True:
-            try:
-                mcts.sock.connect(sock_path)
-                break
-            except (ConnectionRefusedError, FileNotFoundError):
-                time.sleep(0.1)
-                if time.time() - start > 15:
-                    raise RuntimeError(f"Connection to {sock_path} time out,mcts setup failed!")
+        mcts.sock.connect(sock_path)
         return mcts
 
     def set_root(self, state: NDArray, last_action: int, player_to_move: int) -> None:
@@ -321,7 +311,7 @@ class NeuronMCTS:
         return f'root=({self.root.__repr__()})'
 
     def shutdown(self):
-        """关闭时清理socket"""
+        """关闭时断开socket连接"""
         if self.sock:
             self.sock.close()
             self.sock = None

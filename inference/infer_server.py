@@ -1,5 +1,6 @@
 import os
 import threading
+import traceback
 from typing import cast, Sequence
 
 from numpy.typing import NDArray
@@ -21,6 +22,7 @@ class InferServer(InferenceEngine):
         self.max_listen_workers = max_listen_workers
         self._listen_thread: threading.Thread | None = None
         self._listen_pool: ThreadPoolExecutor | None = None
+        self.is_ready = False
         self._server_sock: socket.socket | None = None
         self.client_count = 0
         self.connection_lock = threading.Lock()
@@ -41,6 +43,7 @@ class InferServer(InferenceEngine):
         # 清理残留，否则可能会绑定失败
         if os.path.exists(self.socket_path):
             os.remove(self.socket_path)
+            self.logger.info(f'socket {self.socket_path} has been removed!')
 
     def _setup_socket(self) -> None:
         self._clean_socket()
@@ -52,6 +55,7 @@ class InferServer(InferenceEngine):
 
         # 用线程池处理连接
         self._listen_pool = ThreadPoolExecutor(self.max_listen_workers)
+        self.is_ready = True
         self.logger.info(f"[+] InferenceServer {self.name} listening at {self.socket_path}")
 
     def _listen_loop(self):
@@ -63,7 +67,6 @@ class InferServer(InferenceEngine):
                 conn, _ = self._server_sock.accept()
                 with self.connection_lock:
                     self.client_count += 1
-                    self.logger.info(f'New connection established, total {self.client_count} clients')
                 self._listen_pool.submit(self.handle_client, conn)
             except socket.timeout:
                 continue

@@ -2,9 +2,9 @@ import datetime
 import os
 import socket
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 
-from inference.engine import InferenceEngine
 from inference.functions import recv, send, get_model_name
 from inference.infer_server import InferServer
 from network.functions import read_latest_index
@@ -69,18 +69,32 @@ class ServerHub:
         """注册infer，并返回连接该infer的socket地址"""
         if model_id == 0:  # model_id=0代表使用最新模型
             model_id = read_latest_index(env_name)
-        name = get_model_name(env_name, model_id)
+        key = get_model_name(env_name, model_id)
         with self.lock:
-            if name not in self.infers:
-                infer = InferServer(model_id, env_name)
-                # infer.name可能不等于name，如果其已存在直接返回
-                if infer.name not in self.infers:
-                    self.infers[infer.name] = infer
-                    self.infers[infer.name].start()
-                    self.logger.info(f"Infer server model {infer.name} started.")
-                return self.infers[infer.name].socket_path
+            # 查询原始key是否存在
+            if key in self.infers:
+                infer=self.infers[key]
+            else:
+                # 尝试加载，根据加载结果查询key是否存在
+                _, loaded_id = InferServer.load_model(model_id, env_name)
+                key = get_model_name(env_name, loaded_id)
+                if key in self.infers:
+                    infer=self.infers[key]
+                else:
+                    # 都不存在，创建infer
+                    infer = InferServer(loaded_id, env_name)
+                    self.infers[key] = infer
+                    infer.start()
+                    self.logger.info(f'Registered new infer {infer.name}.')
 
-        return self.infers[name].socket_path
+        # 等待sock文件创建
+        start = time.time()
+        while not infer.is_ready:
+            time.sleep(0.01)
+            if time.time() - start > 10:
+                raise RuntimeError(f"Infer server model {infer.name} socket creation timed out!")
+
+        return infer.socket_path
 
     def remove_infer(self, model_name: str) -> None:
         """没有应用在使用infer，将其移除清理。检查使用情况在infer内部"""

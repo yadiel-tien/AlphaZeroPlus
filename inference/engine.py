@@ -18,10 +18,9 @@ from network.network import Net
 class InferenceEngine:
     def __init__(self, model_index: int, env_name: EnvName):
         # 推理model
-        model_path = get_checkpoint_path(env_name, model_index)
-        self.eval_model, success, = Net.load_from_checkpoint(model_path, eval_model=True)
-        self.model_index = model_index if success else -1
+        self.eval_model, self.model_index = self.load_model(model_index, env_name)
         self.env_name = env_name
+        self.name = get_model_name(self.env_name, self.model_index)
         # 负责单个request的发送接收
         self.request_queue: queue.Queue[QueueRequest | SocketRequest] = queue.Queue()
         self._collector_thread: threading.Thread | None = None
@@ -42,9 +41,13 @@ class InferenceEngine:
         self.total_requests = 0
         self.finished_requests = 0
 
-    @property
-    def name(self):
-        return get_model_name(self.env_name, self.model_index)
+    @classmethod
+    def load_model(cls, model_index: int, env_name: EnvName, eval_mode=True) -> tuple[Net, int]:
+        """尝试加载模型，加载失败时使用初始参数，index为-1"""
+        model_path = get_checkpoint_path(env_name, model_index)
+        model, success = Net.load_from_checkpoint(model_path, eval_model=eval_mode)
+        index = model_index if success else -1
+        return model, index
 
     def start(self) -> None:
         """启动推理线程"""
@@ -176,6 +179,7 @@ class InferenceEngine:
         for t in [self._collector_thread, self._preprocess_thread, self._infer_thread, self._result_thread]:
             if t:
                 t.join()
+
 
         self._collector_thread = self._preprocess_thread = self._infer_thread = self._result_thread = None
 
