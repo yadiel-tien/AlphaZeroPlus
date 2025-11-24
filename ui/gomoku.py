@@ -53,6 +53,7 @@ class GomokuUI(GameUI):
         else:
             self.draw_player()
             self.draw_cursor()
+            self.resign_btn.draw()
 
     def draw_pieces(self):
 

@@ -183,12 +183,14 @@ class InferenceEngine:
 
         self._collector_thread = self._preprocess_thread = self._infer_thread = self._result_thread = None
 
-    def __del__(self):
-        self.shutdown()
-
-    def __enter__(self):
-        self.start()
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.shutdown()
+    # def __del__(self):
+    #     self.logger.info('__del__ called shutdown!')
+    #     self.shutdown()
+    #
+    # def __enter__(self):
+    #     self.start()
+    #     return self
+    #
+    # def __exit__(self, exc_type, exc_val, exc_tb):
+    #     self.logger.info('__exit__ called shutdown!')
+    #     self.shutdown()

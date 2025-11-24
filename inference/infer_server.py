@@ -1,6 +1,7 @@
+import errno
+import inspect
 import os
 import threading
-import traceback
 from typing import cast, Sequence
 
 from numpy.typing import NDArray
@@ -9,6 +10,7 @@ import socket
 from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 
+from utils.logger import get_logger
 from utils.types import EnvName
 from .client import require_infer_removal
 from .engine import InferenceEngine
@@ -46,6 +48,7 @@ class InferServer(InferenceEngine):
             self.logger.info(f'socket {self.socket_path} has been removed!')
 
     def _setup_socket(self) -> None:
+        self.logger.info(f'starting socket {self.socket_path}')
         self._clean_socket()
         # 创建socket
         self._server_sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -70,9 +73,19 @@ class InferServer(InferenceEngine):
                 self._listen_pool.submit(self.handle_client, conn)
             except socket.timeout:
                 continue
-            except OSError:
-                self.logger.info(f"[-] InferenceServer {self.name} listen loop was forced to shutdown!")
-                break
+            except OSError as e:
+                if not self.running:
+                    # 预期中的错误：服务器正在关闭
+                    self.logger.debug(f"Server {self.name} socket closed during shutdown")
+                    break
+                elif e.errno == errno.EBADF:
+                    # 坏的文件描述符：套接字已关闭
+                    self.logger.info(f"Socket for {self.name} was closed unexpectedly")
+                    break
+                else:
+                    # 其他非预期的OSError
+                    self.logger.error(f"Unexpected OSError in {self.name}: {e}")
+                    break
 
     def handle_client(self, client_sock: socket.socket) -> None:
         """socket接收到state，通过队列发送给推理线程"""
@@ -104,6 +117,15 @@ class InferServer(InferenceEngine):
 
     def shutdown(self) -> None:
         """清理资源"""
+        logger = get_logger("debug")
+        # 打印调用栈信息
+        stack = inspect.stack()
+        logger.info(f"{type(self)} {self.name} Shutdown was called from:")
+        for frame_info in stack[1:5]:  # 显示前几层调用栈（避免显示shutdown自身）
+            filename = frame_info.filename
+            lineno = frame_info.lineno
+            function = frame_info.function
+            logger.info(f"  File '{filename}', line {lineno}, in {function}")
         # 关闭推理进程
         super().shutdown()
 
@@ -123,4 +145,5 @@ class InferServer(InferenceEngine):
             self._listen_pool = None
 
         # 清理socket目录
+        self.logger.info(f'Cleaning up socket {self.socket_path} during shutdown')
         self._clean_socket()

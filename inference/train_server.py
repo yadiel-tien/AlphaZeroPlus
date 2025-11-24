@@ -48,9 +48,12 @@ class TrainServer(InferServer):
         if os.path.exists(path):
             checkpoint = torch.load(path, map_location=CONFIG['device'])
             self.fit_model.load_state_dict(checkpoint['model'])
-            self.optimizer.load_state_dict(checkpoint['optimizer'])
-            self.scheduler.load_state_dict(checkpoint['scheduler'])
-            self.total_steps_trained = checkpoint['total_steps_trained']
+            if 'optimizer' in checkpoint:
+                self.optimizer.load_state_dict(checkpoint['optimizer'])
+            if 'scheduler' in checkpoint:
+                self.scheduler.load_state_dict(checkpoint['scheduler'])
+            if 'total_steps_trained' in checkpoint:
+                self.total_steps_trained = checkpoint['total_steps_trained']
             self.fit_logger.info(
                 f'Load checkpoint successfully. Iteration: {iteration}, Step: {self.total_steps_trained}.')
         else:
@@ -210,6 +213,9 @@ class TrainServer(InferServer):
         self.scheduler.step()
         # 保存存档
         self.save_checkpoint(iteration)
+        # 清理显存
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
         duration = time.time() - start
         self.fit_logger.info(f"iteration_to_remove{iteration}:{n_training_steps}轮训练完成，共用时{duration:.2f}秒。")

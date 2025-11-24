@@ -47,7 +47,9 @@ class AIServer(Player):
                 child_state = self.mcts.root.get_child(last_action).state
                 if np.array_equal(state, child_state):  # state匹配，向下裁剪树
                     self.mcts.apply_action(last_action)
-                    self.win_rate = 1 - self.mcts.root.win_rate  # root是对手视角
+                    rival_win_rate = self.mcts.root.win_rate  # root是对手视角
+                    # -1代表无数据，其他情况计算对手胜率
+                    self.win_rate = 1 - rival_win_rate if rival_win_rate != -1 else -1.0
                 else:  # state与当前state不匹配，新建root节点
                     self.mcts.set_root(state, last_action, player_to_move)
 

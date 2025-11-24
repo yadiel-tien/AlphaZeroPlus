@@ -1,6 +1,8 @@
 import collections
+import os
 import queue
 import socket
+import time
 from typing import Self, cast
 
 import numpy as np
@@ -9,6 +11,7 @@ from numpy.typing import NDArray
 from env.env import BaseEnv
 from inference.client import send_request, apply_for_socket_path
 from utils.config import CONFIG
+from utils.logger import get_logger
 from utils.types import GameResult, EnvName
 
 

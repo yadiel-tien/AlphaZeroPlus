@@ -75,7 +75,7 @@ CONFIG: AppConfig = {
         'tensor_shape': (10, 9, 20),
         'state_shape': (10, 9, 7),
         'img_path': './graphics/chess/board.jpeg',
-        'tao_switch_steps': 50,
+        'tao_switch_steps': 30,
         'augment_times': 2,
         'max_iters': 1000,
         'default_net': {
@@ -96,9 +96,9 @@ CONFIG: AppConfig = {
         'tensor_shape': (15, 15, 2),
         'state_shape': (15, 15, 2),
         'img_path': './graphics/gomoku/board.jpeg',
-        'tao_switch_steps': 5,
+        'tao_switch_steps': 4,
         'augment_times': 16,
-        'max_iters': 300,
+        'max_iters': 500,
         'default_net': {
             'in_channels': 2,  # 输入通道数
             'n_filters': 256,  # 卷积层filter数量
@@ -116,7 +116,7 @@ CONFIG: AppConfig = {
     'dirichlet': 0.2,
     'base_url': 'http://192.168.0.126:5000/',
     'device': 'cuda:0',
-    'game_name': 'ChineseChess',
+    'game_name': 'Gomoku',
     'socket_path_prefix': './inference/socks/',
     'hub_socket_path': './inference/socks/hub.sock',
     'train_socket_path': cwd + '/inference/socks/train.sock',

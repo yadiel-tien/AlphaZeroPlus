@@ -74,7 +74,7 @@ class SelfPlayManager:
         start = time.time()
         # 动态n_simulation,最大到1200
         n_simulation = 200 + iteration * 1000 // settings['max_iters']
-        # n_simulation = 800
+
         stop_signal = threading.Event()
         futures = [self.pool.submit(self.self_play_worker, n_simulation, stop_signal) for _ in
                    range(int(n_games * 1.2))]
@@ -158,7 +158,7 @@ class SelfPlayManager:
 
             # 前期高温，后期低温。根据mcts模拟的概率分布进行落子
             if start_from_beginning and steps < settings['tao_switch_steps']:
-                temperature = 1.0
+                temperature = 0.5
             else:
                 temperature = 0.1
             pi = mcts.get_pi(temperature)  # 获取mcts的概率分布pi
@@ -228,7 +228,7 @@ class SelfPlayManager:
         with tqdm(total=n_games, desc=f'{iteration} VS {self.best_index}') as pbar:
             for future in as_completed(futures):
                 if future.exception() is not None:
-                    self.logger.info(f'exception:{future.exception()}' )
+                    self.logger.info(f'exception:{future.exception()}')
                     stop_signal.set()
                     raise future.exception()
                 else:
@@ -265,8 +265,8 @@ class SelfPlayManager:
         :return 0新模型胜，1老模型胜，-1平"""
         env = self.env_class()
         # 随机前8步开局，增加随机性
-        if len(self.opening_buffer) > 50:
-            env.state = self.opening_buffer.sample()
+        # if len(self.opening_buffer) > 50:
+        #     env.state = self.opening_buffer.sample()
         # 随机先后手
         model_list = [iteration, self.best_index] if random.random() < 0.5 else [self.best_index, iteration]
         competitors = [NeuronMCTS.make_socket_mcts(
@@ -277,13 +277,17 @@ class SelfPlayManager:
             model_id=index
         ) for index in model_list]
         # 随机模拟测试
-        n_simulation = 300
+        n_simulation = 500
         steps = 0
+
         while not env.terminated and not env.truncated:
             mcts = competitors[env.player_to_move]
             mcts.run(n_simulation)
-
-            action = int(np.argmax(mcts.root.child_n))
+            if steps < 4:  # 前几步赋予随机性，避免棋局雷同
+                pi = mcts.get_pi(0.5)
+                action = np.random.choice(len(pi), p=pi)
+            else:
+                action = int(np.argmax(mcts.root.child_n))
             env.step(action)
             # 双方都要对应剪枝
             for mcts in competitors:
@@ -309,4 +313,4 @@ class SelfPlayManager:
 
     def shutdown(self):
         self.pool.shutdown()
-        require_train_server_shutdown()
+        # require_train_server_shutdown()
