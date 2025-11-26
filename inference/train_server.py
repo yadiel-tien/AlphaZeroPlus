@@ -81,7 +81,7 @@ class TrainServer(InferServer):
     def _listen_loop(self) -> None:
         """监听socket发来的请求"""
         self._setup_socket()
-        while self.running:
+        while not self._stop_event.is_set():
             try:
                 # accept会阻塞，无法检查running状态，设置超时继续
                 conn, _ = self._server_sock.accept()
@@ -92,14 +92,14 @@ class TrainServer(InferServer):
                 self.fit_logger.info(f"[-] InferenceServer {self.name} listen loop was forced to shutdown: {e}")
                 break
             except Exception as e:
-                if not self.running:
+                if self._stop_event.is_set():
                     break
                 self.fit_logger.error(e)
 
     def handle_client(self, client_sock: socket.socket) -> None:
         """socket接收到state，通过队列发送给推理线程"""
         client_sock.settimeout(1)
-        while self.running:
+        while not self._stop_event.is_set():
             try:
                 data = recv(client_sock)
                 if isinstance(data, np.ndarray):  # 接收到state，放入推理队列

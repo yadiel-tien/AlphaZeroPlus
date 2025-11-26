@@ -34,7 +34,7 @@ class InferenceEngine:
         self.result_queue: queue.Queue[tuple[list[QueueRequest | SocketRequest], NDArray, NDArray]] = queue.Queue()
         self._result_thread: threading.Thread | None = None
 
-        self.running = False
+        self._stop_event = threading.Event()
         self.model_lock = threading.Lock()
         self.logger = get_logger('inference')
         self.start_time = time.time()
@@ -51,21 +51,19 @@ class InferenceEngine:
 
     def start(self) -> None:
         """启动推理线程"""
-        if not self.running:
-            self.running = True
-            self._collector_thread = threading.Thread(target=self._collect_loop, daemon=True)
-            self._collector_thread.start()
-            self._preprocess_thread = threading.Thread(target=self._pre_infer_loop, daemon=True)
-            self._preprocess_thread.start()
-            self._infer_thread = threading.Thread(target=self._inference_loop, daemon=True)
-            self._infer_thread.start()
-            self._result_thread = threading.Thread(target=self._post_infer_loop, daemon=True)
-            self._result_thread.start()
+        self._collector_thread = threading.Thread(target=self._collect_loop, daemon=True)
+        self._collector_thread.start()
+        self._preprocess_thread = threading.Thread(target=self._pre_infer_loop, daemon=True)
+        self._preprocess_thread.start()
+        self._infer_thread = threading.Thread(target=self._inference_loop, daemon=True)
+        self._infer_thread.start()
+        self._result_thread = threading.Thread(target=self._post_infer_loop, daemon=True)
+        self._result_thread.start()
 
     def _collect_loop(self):
         """从request queue收集数据，尽可能多的收集数据打包"""
         self.start_time = time.time()
-        while self.running:
+        while not self._stop_event.is_set():
             batch_size = 1
             threshold = 32
             max_size = 50
@@ -92,14 +90,14 @@ class InferenceEngine:
                     threshold = max(1, batch_size // 2)
                     batch_size = threshold
                     phase = 'ramp up'
-                    if not self.running:
+                    if self._stop_event.is_set():
                         break
             if requests:
                 self.preprocess_queue.put(requests)
 
     def _pre_infer_loop(self):
         """做推理前准备工作，将batch_queue接收到的数据查缓存，打包，转tensor"""
-        while self.running:
+        while not self._stop_event.is_set():
             # 获取推理列表
             try:
                 requests = self.preprocess_queue.get(timeout=0.5)
@@ -113,7 +111,7 @@ class InferenceEngine:
 
     def _inference_loop(self):
         """推理loop，持续不断的接收state，打包，发GPU推理，返回结果"""
-        while self.running:
+        while not self._stop_event.is_set():
             try:
                 requests, tensor = self.infer_queue.get(timeout=0.5)
                 batch_tensor = tensor.to(CONFIG['device'], dtype=torch.float32, non_blocking=True)
@@ -129,7 +127,7 @@ class InferenceEngine:
                 continue
 
     def _post_infer_loop(self):
-        while self.running:
+        while not self._stop_event.is_set():
             try:
                 requests, probs, values = self.result_queue.get(timeout=0.5)
                 self.deliver_result(requests, probs, values)
@@ -162,7 +160,7 @@ class InferenceEngine:
 
     def shutdown(self) -> None:
         """清理资源，关闭推理线程"""
-        self.running = False
+        self._stop_event.set()
         if self.eval_model:
             del self.eval_model
             self.eval_model = None
@@ -180,17 +178,5 @@ class InferenceEngine:
             if t:
                 t.join()
 
-
         self._collector_thread = self._preprocess_thread = self._infer_thread = self._result_thread = None
 
-    # def __del__(self):
-    #     self.logger.info('__del__ called shutdown!')
-    #     self.shutdown()
-    #
-    # def __enter__(self):
-    #     self.start()
-    #     return self
-    #
-    # def __exit__(self, exc_type, exc_val, exc_tb):
-    #     self.logger.info('__exit__ called shutdown!')
-    #     self.shutdown()

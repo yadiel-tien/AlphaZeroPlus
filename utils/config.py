@@ -98,7 +98,7 @@ CONFIG: AppConfig = {
         'tensor_shape': (15, 15, 2),
         'state_shape': (15, 15, 2),
         'img_path': './graphics/gomoku/board.jpeg',
-        'tao_switch_steps': 10,
+        'tao_switch_steps': 4,
         'augment_times': 16,
         'max_iters': 800,
         'avg_game_steps': 40,

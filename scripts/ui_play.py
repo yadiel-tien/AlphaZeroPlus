@@ -18,9 +18,9 @@ class Game:
         self.screen = pygame.display.set_mode(settings['screen_size'])
         pygame.display.set_caption(game_name)
         if model1_idx == -1:
-            self.player = [Human(game_name), Human(game_name)]
+            self.players = [Human(game_name), Human(game_name)]
         elif model2_idx == -1:
-            self.player = [Human(game_name), AIClient(model1_idx, game_name)]
+            self.players = [Human(game_name), AIClient(model1_idx, game_name)]
         else:
             self.players = [AIClient(model1_idx, game_name), AIClient(model2_idx, game_name)]
         if game_name == 'Gomoku':

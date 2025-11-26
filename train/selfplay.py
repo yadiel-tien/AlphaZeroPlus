@@ -13,7 +13,7 @@ from utils.state_buffer import StateBuffer
 from utils.replay import ReplayBuffer
 from utils.config import game_name, settings
 from mcts.deepMcts import NeuronMCTS
-from inference.client import require_fit, require_train_server_shutdown, require_eval_model_update, \
+from inference.client import require_fit, require_eval_model_update, \
     require_model_removal, require_statistic_reset
 from network.functions import read_latest_index, save_best_index, read_best_index
 import random
@@ -127,9 +127,9 @@ class SelfPlayManager:
         env.reset()
         # 一定概率从残局开始
         start_from_beginning = True
-        if random.random() < 0.5 and len(self.midgame_buffer) > 50:
-            start_from_beginning = False
-            env.state = self.midgame_buffer.sample()
+        # if random.random() < 0.5 and len(self.midgame_buffer) > 50:
+        #     start_from_beginning = False
+        #     env.state = self.midgame_buffer.sample()
 
         mcts = NeuronMCTS.make_selfplay_mcts(state=env.state,
                                              env_class=self.env_class,
@@ -158,7 +158,7 @@ class SelfPlayManager:
 
             # 前期高温，后期低温。根据mcts模拟的概率分布进行落子
             if start_from_beginning and steps < settings['tao_switch_steps']:
-                temperature = 0.35
+                temperature = 1.0
             else:
                 temperature = 0.1
             pi = mcts.get_pi(temperature)  # 获取mcts的概率分布pi
