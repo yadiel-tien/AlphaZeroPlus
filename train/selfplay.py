@@ -125,9 +125,9 @@ class SelfPlayManager:
 
         env = self.env_class()
         env.reset()
-        # 30%概率从残局开始
+        # 一定概率从残局开始
         start_from_beginning = True
-        if random.random() < 0.7 and len(self.midgame_buffer) > 50:
+        if random.random() < 0.5 and len(self.midgame_buffer) > 50:
             start_from_beginning = False
             env.state = self.midgame_buffer.sample()
 
@@ -138,9 +138,9 @@ class SelfPlayManager:
         steps = 0
         samples = []
         while not env.terminated and not env.truncated:
-            if steps == 8 and start_from_beginning and (0.4 < mcts.root.win_rate < 0.6):
+            if steps == settings['avg_game_steps'] // 10 and start_from_beginning and (0.4 < mcts.root.win_rate < 0.6):
                 self.opening_buffer.append(env.state)
-            if steps == 50 and start_from_beginning and (0.4 < mcts.root.win_rate < 0.6):
+            if steps == settings['avg_game_steps'] // 2 and start_from_beginning and (0.4 < mcts.root.win_rate < 0.6):
                 self.midgame_buffer.append(env.state)
 
             mcts.run(n_simulation)  # 模拟
@@ -158,7 +158,7 @@ class SelfPlayManager:
 
             # 前期高温，后期低温。根据mcts模拟的概率分布进行落子
             if start_from_beginning and steps < settings['tao_switch_steps']:
-                temperature = 0.5
+                temperature = 0.35
             else:
                 temperature = 0.1
             pi = mcts.get_pi(temperature)  # 获取mcts的概率分布pi
@@ -264,9 +264,11 @@ class SelfPlayManager:
         """iteration对战最佳模型，随机先手顺序。
         :return 0新模型胜，1老模型胜，-1平"""
         env = self.env_class()
-        # 随机前8步开局，增加随机性
-        # if len(self.opening_buffer) > 50:
-        #     env.state = self.opening_buffer.sample()
+        start_from_beginning = True
+        # 有一定概率使用随机开局
+        if len(self.opening_buffer) > 50 and random.random() < 0.5:
+            env.state = self.opening_buffer.sample()
+            start_from_beginning = False
         # 随机先后手
         model_list = [iteration, self.best_index] if random.random() < 0.5 else [self.best_index, iteration]
         competitors = [NeuronMCTS.make_socket_mcts(
@@ -277,14 +279,15 @@ class SelfPlayManager:
             model_id=index
         ) for index in model_list]
         # 随机模拟测试
-        n_simulation = 500
+        n_simulation = 300
         steps = 0
 
         while not env.terminated and not env.truncated:
             mcts = competitors[env.player_to_move]
             mcts.run(n_simulation)
-            if steps < 4:  # 前几步赋予随机性，避免棋局雷同
-                pi = mcts.get_pi(0.5)
+            # 前几步赋予随机性，避免棋局雷同
+            if steps < settings['tao_switch_steps'] and start_from_beginning:
+                pi = mcts.get_pi(0.25)
                 action = np.random.choice(len(pi), p=pi)
             else:
                 action = int(np.argmax(mcts.root.child_n))
@@ -295,7 +298,6 @@ class SelfPlayManager:
             if stop_signal.is_set():
                 env.truncated = True
             steps += 1
-
         for mcts in competitors:
             mcts.shutdown()
         if env.winner in (-1, 2):  # 和棋或被提前终止

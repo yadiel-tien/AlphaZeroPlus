@@ -13,11 +13,16 @@ game_name: EnvName = CONFIG['game_name']
 
 
 class Game:
-    def __init__(self, model_idx: int) -> None:
+    def __init__(self, model1_idx: int, model2_idx: int) -> None:
         pygame.init()
         self.screen = pygame.display.set_mode(settings['screen_size'])
         pygame.display.set_caption(game_name)
-        self.players = [Human(game_name), AIClient(model_idx, game_name)]
+        if model1_idx == -1:
+            self.player = [Human(game_name), Human(game_name)]
+        elif model2_idx == -1:
+            self.player = [Human(game_name), AIClient(model1_idx, game_name)]
+        else:
+            self.players = [AIClient(model1_idx, game_name), AIClient(model2_idx, game_name)]
         if game_name == 'Gomoku':
             self.board = GomokuUI(self.players)
         else:
@@ -42,12 +47,14 @@ class Game:
 
 
 if __name__ == '__main__':
-    try:
-        index = int(sys.argv[1])
-    except (ValueError, IndexError):
-        print(sys.argv)
-        index = 666
-    game = Game(index)
+    # 解析参数，如果参数个数设置模式为人人，人机，机机对战。
+    index1, index2 = -1, -1
+    if len(sys.argv) > 1:
+        index1 = int(sys.argv[1])
+    if len(sys.argv) > 2:
+        index2 = int(sys.argv[2])
+
+    game = Game(index1, index2)
     game.play()
     game.shutdown()
     pygame.quit()

@@ -37,6 +37,7 @@ class GameConfig(TypedDict):
     tao_switch_steps: int
     augment_times: int
     max_iters: int
+    avg_game_steps: int
     default_net: NetConfig
 
 
@@ -78,6 +79,7 @@ CONFIG: AppConfig = {
         'tao_switch_steps': 30,
         'augment_times': 2,
         'max_iters': 1000,
+        'avg_game_steps': 80,
         'default_net': {
             'in_channels': 20,  # 输入通道数
             'n_filters': 256,  # 卷积层filter数量
@@ -96,9 +98,10 @@ CONFIG: AppConfig = {
         'tensor_shape': (15, 15, 2),
         'state_shape': (15, 15, 2),
         'img_path': './graphics/gomoku/board.jpeg',
-        'tao_switch_steps': 4,
+        'tao_switch_steps': 10,
         'augment_times': 16,
-        'max_iters': 500,
+        'max_iters': 800,
+        'avg_game_steps': 40,
         'default_net': {
             'in_channels': 2,  # 输入通道数
             'n_filters': 256,  # 卷积层filter数量

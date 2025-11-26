@@ -5,6 +5,7 @@ import pygame
 
 from env.chess import ChineseChess
 from env.env import BaseEnv
+from env.gomoku import Gomoku
 from .button import Button
 from utils.timer import Timer
 from player.human import Human, Player
@@ -153,11 +154,14 @@ class GameUI(ABC):
     def draw_player(self):
         self.timers[self.env.player_to_move].update()
         desc_vertical_positions = [60, 740] if self.is_view_flipped else [740, 60]
-        sides = ["Red", "Black"]
+        if isinstance(self.env, Gomoku):
+            sides = ["black", "white"]
+        else:
+            sides = ["red", "black"]
         for i, player in enumerate(self.players):
             time_remain = self.timers[i].remain // 1000
-            font = pygame.font.Font(None, 60)
-            desc = font.render(f'{player.description}  {sides[i]}:{time_remain:02}', True, 'orange')
+            font = pygame.font.SysFont('menlo', 36, True)
+            desc = font.render(f'{player.description} {sides[i].title()}:{time_remain:>3}', True, sides[i])
             desc_rect = desc.get_rect(center=(300, desc_vertical_positions[i]))
             self.screen.blit(desc, desc_rect.topleft)
 
@@ -166,7 +170,8 @@ class GameUI(ABC):
                 win_rate_text = f'{win_rate:.2%}' if win_rate != -1.0 else '--'
                 font = pygame.font.Font(None, 30)
                 win_rate_label = font.render(f'win rate:{win_rate_text} ', True, 'gray')
-                self.screen.blit(win_rate_label, (220, desc_rect.bottom + 10))
+                rate_rect = win_rate_label.get_rect(center=(desc_rect.centerx, desc_rect.bottom + 10))
+                self.screen.blit(win_rate_label, rate_rect)
 
     def _pos2grid(self, pos: tuple[int, int]) -> tuple[int, int] | None:
         """根据屏幕坐标，返回棋盘位置，超出棋盘返回None

@@ -106,8 +106,6 @@ class ServerHub:
         if infer:
             infer.shutdown()
             self.logger.info(f'{model_name} has been removed!')
-        else:
-            self.logger.info(f'remove failed, model {model_name} is not registered!')
 
     def show_status(self):
         """定期显示连接数量"""

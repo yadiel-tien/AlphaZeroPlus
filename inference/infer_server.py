@@ -105,6 +105,7 @@ class InferServer(InferenceEngine):
                     if self.client_count == 0:
                         require_infer_removal(self.name)
                 break
+        require_infer_removal(self.name)
         client_sock.close()
 
     def deliver_result(self, requests: list[SocketRequest], probs: Sequence[NDArray], values: Sequence[float]) -> None:
