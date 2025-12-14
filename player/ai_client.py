@@ -27,6 +27,7 @@ class AIClient(Player):
         self.pid = ''
         self.time_stamp = 0
         self.session = requests.Session()
+        self.session.trust_env = False  # 禁用代理
         self.alive = True
         self.win_rate = -1.0
         self.status = ClientStatus.UNINITIATED
@@ -118,14 +119,14 @@ class AIClient(Player):
         """发送请求的基础方法，获取反馈，处理错误"""
         response = None
         try:
-            headers = {'content-type': 'application/json'}
             response = self.session.post(
                 url,
-                data=json.dumps(payload),
-                headers=headers,
+                json=payload,
                 timeout=60  # 添加超时设置
             )
-            response.raise_for_status()  # 自动处理4xx/5xx错误
+
+            response.raise_for_status()  # 检查HTTP错误
+
             return response.json()
 
         except requests.exceptions.HTTPError as http_err:

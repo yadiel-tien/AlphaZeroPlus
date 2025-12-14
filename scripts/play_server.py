@@ -22,9 +22,29 @@ def require_json(f: Callable) -> Callable:
 
     @wraps(f)
     def wrapper(*args: Any, **kwargs: Any) -> Any:
-        data = request.get_json()
-        if not data:
-            return jsonify({"error": "Invalid JSON data"}), 400
+        # 1. 首先检查Content-Type
+        if not request.is_json:
+            print(f"[require_json] 错误: Content-Type不是application/json")
+            print(f"[require_json] 实际Content-Type: {request.content_type}")
+            print(f"[require_json] 请求方法: {request.method}")
+            return jsonify({
+                "error": "Content-Type must be application/json",
+                "received_content_type": request.content_type
+            }), 400
+
+        # 2. 尝试解析JSON（silent=True避免抛出异常）
+        data = request.get_json(silent=True)
+
+        # 3. 检查是否成功解析
+        if data is None:
+            print(f"[require_json] 错误: 无法解析JSON")
+            print(f"[require_json] 原始数据: {request.data[:500] if request.data else '空'}")
+            return jsonify({
+                "error": "Invalid JSON data",
+                "data_preview": str(request.data[:200]) if request.data else "empty"
+            }), 400
+
+        # 4. 将解析后的data作为第一个参数传递给原函数
         return f(data, *args, **kwargs)
 
     return wrapper
@@ -36,7 +56,6 @@ def setup(data: Any) -> Any:
     try:
         model_id = data['model_id']
         env_name = data['env_class']
-
         # 分配pid
         pid = str(uuid.uuid4())
         with lock:

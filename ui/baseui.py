@@ -179,7 +179,7 @@ class GameUI(ABC):
         :return 棋盘坐标(row,col)
         """
         center_x, center_y = self.screen.get_rect().center
-        rows, columns, _ = self.env.shape
+        _, rows, columns = self.env.shape
         grid_size = self.settings['grid_size']
 
         col: int = round((pos[0] - center_x) / grid_size + (columns - 1) / 2)
@@ -195,7 +195,7 @@ class GameUI(ABC):
         """
         row, col = grid
         center_x, center_y = self.screen.get_rect().center
-        rows, columns, _ = self.env.shape
+        _, rows, columns = self.env.shape
         grid_size = self.settings['grid_size']
 
         x = (col - (columns - 1) / 2) * grid_size + center_x - grid_size // 2

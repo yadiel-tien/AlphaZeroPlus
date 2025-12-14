@@ -34,7 +34,7 @@ class InferenceEngine:
         self.result_queue: queue.Queue[tuple[list[QueueRequest | SocketRequest], NDArray, NDArray]] = queue.Queue()
         self._result_thread: threading.Thread | None = None
 
-        self._stop_event = threading.Event()
+        self.stop_event = threading.Event()
         self.model_lock = threading.Lock()
         self.logger = get_logger('inference')
         self.start_time = time.time()
@@ -63,7 +63,7 @@ class InferenceEngine:
     def _collect_loop(self):
         """从request queue收集数据，尽可能多的收集数据打包"""
         self.start_time = time.time()
-        while not self._stop_event.is_set():
+        while not self.stop_event.is_set():
             batch_size = 1
             threshold = 32
             max_size = 50
@@ -90,14 +90,14 @@ class InferenceEngine:
                     threshold = max(1, batch_size // 2)
                     batch_size = threshold
                     phase = 'ramp up'
-                    if self._stop_event.is_set():
+                    if self.stop_event.is_set():
                         break
             if requests:
                 self.preprocess_queue.put(requests)
 
     def _pre_infer_loop(self):
         """做推理前准备工作，将batch_queue接收到的数据查缓存，打包，转tensor"""
-        while not self._stop_event.is_set():
+        while not self.stop_event.is_set():
             # 获取推理列表
             try:
                 requests = self.preprocess_queue.get(timeout=0.5)
@@ -105,13 +105,13 @@ class InferenceEngine:
                 continue
 
             # 处理batch，转为tensor
-            batch = [np.transpose(request.state, axes=[2, 0, 1]) for request in requests]
+            batch = [request.state for request in requests]
             batch_tensor = torch.from_numpy(np.stack(batch)).pin_memory()
             self.infer_queue.put((requests, batch_tensor))
 
     def _inference_loop(self):
         """推理loop，持续不断的接收state，打包，发GPU推理，返回结果"""
-        while not self._stop_event.is_set():
+        while not self.stop_event.is_set():
             try:
                 requests, tensor = self.infer_queue.get(timeout=0.5)
                 batch_tensor = tensor.to(CONFIG['device'], dtype=torch.float32, non_blocking=True)
@@ -127,7 +127,7 @@ class InferenceEngine:
                 continue
 
     def _post_infer_loop(self):
-        while not self._stop_event.is_set():
+        while not self.stop_event.is_set():
             try:
                 requests, probs, values = self.result_queue.get(timeout=0.5)
                 self.deliver_result(requests, probs, values)
@@ -160,7 +160,7 @@ class InferenceEngine:
 
     def shutdown(self) -> None:
         """清理资源，关闭推理线程"""
-        self._stop_event.set()
+        self.stop_event.set()
         if self.eval_model:
             del self.eval_model
             self.eval_model = None
@@ -179,4 +179,3 @@ class InferenceEngine:
                 t.join()
 
         self._collector_thread = self._preprocess_thread = self._infer_thread = self._result_thread = None
-

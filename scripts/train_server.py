@@ -12,7 +12,7 @@ def main():
     server = TrainServer(model_idx, game_name, 200)
     register_sigint(server.shutdown)
     server.start()
-    while server._stop_event:
+    while not server.stop_event.is_set():
         time.sleep(1)  # 阻塞主线程，避免退出
     server.shutdown()
 

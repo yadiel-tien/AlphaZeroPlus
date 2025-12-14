@@ -1,8 +1,6 @@
 import collections
-import os
 import queue
 import socket
-import time
 from typing import Self, cast
 
 import numpy as np
@@ -11,7 +9,6 @@ from numpy.typing import NDArray
 from env.env import BaseEnv
 from inference.client import send_request, apply_for_socket_path
 from utils.config import CONFIG
-from utils.logger import get_logger
 from utils.types import GameResult, EnvName
 
 
@@ -159,15 +156,25 @@ class NeuronNode:
             result = -result
             node = node.parent
 
-    def inject_noise(self, noise_weight=0.25) -> None:
+    def inject_noise(self) -> None:
         """根节点添加狄利克雷噪声，增加随机性"""
         legal_len = len(self.valid_actions)
         if legal_len == 0:
             return
+        # # 根据概率信息熵调节weight
+        # probs = self.child_p[self.valid_actions]
+        # entropy = -np.sum(probs * np.log(probs + 1e-10))
+        # max_entropy = np.log(legal_len)
+        # ratio = entropy / max_entropy if max_entropy > 0 else 0
+        #
+        # max_eps = 0.5
+        # min_eps = 0.1
+        # eps = max_eps - (max_eps - min_eps) * ratio
+        eps=0.25
         # 按照alphazero的参数，根据合法动作个数调整
         alpha = 0.03 * 361 / legal_len
         noise = np.random.dirichlet([alpha] * legal_len)
-        self.child_p[self.valid_actions] = noise * noise_weight + (1 - noise_weight) * self.child_p[
+        self.child_p[self.valid_actions] = noise * eps + (1 - eps) * self.child_p[
             self.valid_actions]
         self.child_p[self.valid_actions] /= self.child_p[self.valid_actions].sum()
 

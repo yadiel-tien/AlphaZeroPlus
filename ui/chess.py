@@ -33,8 +33,6 @@ class ChineseChessUI(GameUI):
         self.check_buffer = {'action': -1, 'checkmate': False, 'check': False}
         self.safe_move_cache: dict[int, bool] = {}
 
-
-
     @property
     def human_perspective_state(self) -> NDArray:
         """尽量保持人类玩家在屏幕下方"""
@@ -74,7 +72,7 @@ class ChineseChessUI(GameUI):
             self.selected_pos = None
         else:
             # 选择棋子
-            chosen_piece = self.env.state[self.human_perspective_pos(player.selected_grid) + (0,)]
+            chosen_piece = self.env.state[0][self.human_perspective_pos(player.selected_grid)]
             if chosen_piece == -1:
                 return
             is_red_piece = (0 <= chosen_piece < 7)
@@ -95,7 +93,7 @@ class ChineseChessUI(GameUI):
             new_state = self.env.virtual_step(self.env.state, action)
             self.safe_move_cache[action] = not self.env.is_check(new_state, self.env.player_to_move)
             _, _, tr, tc = self.env.action2move(action)
-            if new_state[tr, tc, 1] in (4, 11):
+            if new_state[1, tr, tc] in (4, 11):
                 self.safe_move_cache[action] = True
 
     def play_place_sound(self, action: int) -> None:
@@ -119,7 +117,7 @@ class ChineseChessUI(GameUI):
 
         # 吃子
         _, _, tr, tc = self.env.action2move(action)
-        target = self.env.state[tr, tc, 1]
+        target = self.env.state[1, tr, tc]
         if target not in [-1, 4, 11]:
             self.capture_sound.play()
 
@@ -151,7 +149,7 @@ class ChineseChessUI(GameUI):
         """绘制棋子"""
         for row in range(10):
             for col in range(9):
-                piece = int(self.human_perspective_state[row, col, 0])
+                piece = int(self.human_perspective_state[0, row, col])
                 if piece != -1 and (row, col) != self.selected_pos:
                     x, y = self._grid2pos((row, col))
                     pic = self.piece_pics[piece]
@@ -162,7 +160,7 @@ class ChineseChessUI(GameUI):
         """选中的棋子周围绘制绿色圆圈"""
         if self.selected_pos:
             row, col = self.selected_pos
-            piece = int(self.human_perspective_state[row, col, 0])
+            piece = int(self.human_perspective_state[0, row, col])
             piece_pic = self.piece_pics[piece]
             x, y = self._grid2pos((row, col))
             rect = piece_pic.get_rect(topleft=(x, y))

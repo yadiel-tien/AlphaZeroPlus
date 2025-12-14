@@ -148,7 +148,7 @@ class GomokuSession:
         self.player.shutdown()
 
 
-def run_server(host='0.0.0.0', port=12345, model_id=524) -> None:
+def run_server(host='0.0.0.0', port=12345) -> None:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         # 允许端口复用，防止重启时报错 "Address already in use"
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -161,9 +161,11 @@ def run_server(host='0.0.0.0', port=12345, model_id=524) -> None:
 
         while True:
             try:
+                session = None
                 conn, addr = s.accept()
                 print(f"[Net] New connection from {addr}")
-                session = GomokuSession(conn, model_id=model_id, n_simulation=1000)
+                best_idx = read_best_index('Gomoku')
+                session = GomokuSession(conn, model_id=best_idx, n_simulation=1000)
                 session.run()
             except KeyboardInterrupt:
                 break
@@ -178,5 +180,4 @@ def run_server(host='0.0.0.0', port=12345, model_id=524) -> None:
 
 if __name__ == "__main__":
     """适用于Priskvork对战协议，具体协议内容见https://plastovicka.github.io/protocl2en.htm"""
-    best_idx = read_best_index('Gomoku')
-    run_server(model_id=best_idx)
+    run_server()

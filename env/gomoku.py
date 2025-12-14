@@ -15,12 +15,12 @@ settings = CONFIG['Gomoku']
 
 
 class Gomoku(BaseEnv):
-    shape: tuple[int, int, int] = 15, 15, 2
-    n_actions = shape[0] * shape[1]
+    shape: tuple[int, int, int] = settings['state_shape']
+    n_actions = shape[1] * shape[2]
 
     def __init__(self, rows: int = 15, columns: int = 15):
         super().__init__()
-        self.shape: tuple[int, int, int] = rows, columns, 2
+        self.shape: tuple[int, int, int] = 2, rows, columns
         self.action_space = spaces.Discrete(rows * columns)
         self.n_actions = rows * columns
         self.observation_space = spaces.Box(0, 1, shape=self.shape, dtype=np.float32)
@@ -43,8 +43,7 @@ class Gomoku(BaseEnv):
 
     @classmethod
     def get_valid_actions(cls, state: NDArray, player_to_move: int) -> NDArray[np.int_]:
-        state = state[:, :, 0] + state[:, :, 1]
-        return np.flatnonzero(state == 0)
+        return np.flatnonzero((state[0] + state[1]) < 0.5)
 
     @classmethod
     def virtual_step(cls, state: NDArray[np.float32], action: int) -> NDArray[np.float32]:
@@ -52,10 +51,10 @@ class Gomoku(BaseEnv):
         new_state = np.copy(state)
         row, col = cls.action2move(action)
         # 执行落子
-        new_state[row, col, 0] = 1
+        new_state[0, row, col] = 1
 
         # 更改棋盘和当前玩家
-        new_state[:, :, [0, 1]] = new_state[:, :, [1, 0]]
+        new_state[[0, 1]] = new_state[[1, 0]]
         return new_state
 
     def step(self, action: int) -> tuple[NDArray[np.float32], float, bool, bool, dict]:
@@ -93,12 +92,12 @@ class Gomoku(BaseEnv):
     def move2action(cls, move: GomokuMove) -> int:
         """从 (row, col) 坐标获取动作编号"""
         row, col = move
-        return row * cls.shape[1] + col
+        return row * cls.shape[2] + col
 
     @classmethod
     def action2move(cls, action: int) -> GomokuMove:
         """从动作编号获取坐标 (row, col)"""
-        return divmod(int(action), cls.shape[1])
+        return divmod(int(action), cls.shape[2])
 
     def describe_last_move(self) -> None:
         """无UI对弈时，打印描述行棋的说明"""
@@ -109,19 +108,19 @@ class Gomoku(BaseEnv):
 
     @staticmethod
     def _is_draw(state: NDArray) -> bool:
-        return np.all(np.logical_or(state[:, :, 0], state[:, :, 1]))
+        return np.all(np.logical_or(state[0], state[1]))
 
     @classmethod
     def get_win_stones(cls, state: NDArray, action_just_executed: int) -> list[tuple[int, int]]:
         """落子后检查获胜的情况，获胜返回连成5子的棋子位置，未获胜返回空列表[]"""
-        h, w, _ = cls.shape
+        _, h, w = cls.shape
         h0, w0 = cls.action2move(action_just_executed)
         for dh, dw in [(1, 0), (1, 1), (0, 1), (-1, 1)]:
             stones = [(h0, w0)]
             for direction in (-1, 1):
                 for step in range(1, 5):
                     i, j = h0 + step * dh * direction, w0 + step * dw * direction
-                    if 0 <= i < h and 0 <= j < w and state[i, j, 1]:
+                    if 0 <= i < h and 0 <= j < w and state[1, i, j]:
                         stones.append((i, j))
                         if len(stones) == 5:
                             return stones
@@ -136,15 +135,23 @@ class Gomoku(BaseEnv):
     def get_board_str(cls, state: NDArray, player_to_move: int, colorize=True) -> str:
         """打印棋盘"""
         board_str = '\n'
-        col_indices = [str(i + 1) for i in range(cls.shape[1])]
+        col_indices = [str(i + 1) for i in range(cls.shape[2])]
         head = '  '
         for idx in col_indices:
             head += f'{idx:>3}'
         board_str += head + '\n'
-        for i, row in enumerate(state):
-            board_str += f'{i + 1:>2}  ' + '  '.join(
-                ['X' if cell[player_to_move] else 'O' if cell[1 - player_to_move] else '.'
-                 for cell in row]) + '\n'
+
+        for i in range(cls.shape[1]):
+            row_str = f'{i + 1:>2}'
+            for j in range(cls.shape[2]):
+                if state[player_to_move, i, j]:
+                    row_str += ' X '
+                elif state[1 - player_to_move, i, j]:
+                    row_str += ' O '
+                else:
+                    row_str += ' . '
+            board_str += row_str + '\n'
+
         if not colorize:
             return board_str
         # 用红色显示玩家 1 的棋子 (1)
@@ -182,13 +189,12 @@ class Gomoku(BaseEnv):
     @classmethod
     def augment_data(cls, data: tuple[NDArray, NDArray, float]) -> list[tuple[NDArray, NDArray, float]]:
         """通过旋转和翻转棋盘进行数据增强
-            - ChineseChess 支持水平翻转
             - Gomoku 支持8种增强
         :param data: (state,pi,q)
          :return 增强后的列别[(state,pi,v)]"""
         state, pi, v = data
         augmented_samples = []
-        if state.shape[0] == state.shape[1]:
+        if state.shape[2] == state.shape[1]:
             indices = range(8)
         else:  # 非方形棋盘
             indices = (0, 2, 4, 5)

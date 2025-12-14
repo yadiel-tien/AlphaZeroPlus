@@ -23,15 +23,13 @@ class SelfPlayManager:
     def __init__(self, n_workers: int):
         self.logger = get_logger('selfplay')
         self.n_workers = n_workers
-        self.buffer = ReplayBuffer(500_000, 2048)
+        self.buffer = ReplayBuffer(settings['buffer_size'], 2048)
         self.buffer.load()
         self.env_class = get_class(game_name)
         self.best_index = read_best_index()
         self.pool = ThreadPoolExecutor(self.n_workers)
-        self.midgame_buffer = StateBuffer(2000, 'midgame')
-        self.opening_buffer = StateBuffer(2000, 'opening')
-        self.midgame_buffer.load()
-        self.opening_buffer.load()
+        # self.midgame_buffer = StateBuffer(2000, 'midgame')
+        # self.midgame_buffer.load()
         self.debug_logger = get_logger('debug')
 
     def run(self, n_games: int) -> None:
@@ -73,11 +71,11 @@ class SelfPlayManager:
 
         start = time.time()
         # 动态n_simulation,最大到1200
-        n_simulation = 200 + iteration * 1000 // settings['max_iters']
+        n_simulation = 200 + iteration * 600 // settings['max_iters']
 
         stop_signal = threading.Event()
         futures = [self.pool.submit(self.self_play_worker, n_simulation, stop_signal) for _ in
-                   range(int(n_games * 1.2))]
+                   range(int(n_games * 1.5))]
         data_count, win_count, lose_count, draw_count, truncate_count, completed = 0, 0, 0, 0, 0, 0
         with tqdm(total=n_games, desc='Self-play') as pbar:
             for future in as_completed(futures):
@@ -89,6 +87,8 @@ class SelfPlayManager:
                     self.logger.error(f'Exception occurred: {e}')
                     stop_signal.set()
                     raise
+                if winner == 2:
+                    continue
                 pbar.update(1)
 
                 completed += 1
@@ -105,8 +105,7 @@ class SelfPlayManager:
                     break
 
         self.buffer.save()
-        self.midgame_buffer.save()
-        self.opening_buffer.save()
+        # self.midgame_buffer.save()
         # 总结
         duration = time.time() - start
         self.logger.info(
@@ -127,9 +126,14 @@ class SelfPlayManager:
         env.reset()
         # 一定概率从残局开始
         start_from_beginning = True
-        # if random.random() < 0.5 and len(self.midgame_buffer) > 50:
+        # 随机开局
+        # if random.random() < 0.8 and len(self.midgame_buffer) > 50:
         #     start_from_beginning = False
-        #     env.state = self.midgame_buffer.sample()
+        #     state = self.midgame_buffer.sample()
+        #     # 随机双方阵营
+        #     if random.random() < 0.5:
+        #         state = state[:, :, [1, 0]]
+        #     env.state = state
 
         mcts = NeuronMCTS.make_selfplay_mcts(state=env.state,
                                              env_class=self.env_class,
@@ -137,16 +141,15 @@ class SelfPlayManager:
                                              player_to_move=env.player_to_move)
         steps = 0
         samples = []
+        exploration_steps = settings['selfplay']['exploration_steps']
+        tau_decay_rate = settings['selfplay']['tau_decay_rate']
         while not env.terminated and not env.truncated:
-            if steps == settings['avg_game_steps'] // 10 and start_from_beginning and (0.4 < mcts.root.win_rate < 0.6):
-                self.opening_buffer.append(env.state)
-            if steps == settings['avg_game_steps'] // 2 and start_from_beginning and (0.4 < mcts.root.win_rate < 0.6):
-                self.midgame_buffer.append(env.state)
+            # if steps == settings['avg_game_steps'] // 2 and start_from_beginning and (0.4 < mcts.root.win_rate < 0.6):
+            #     self.midgame_buffer.append(env.state)
 
             mcts.run(n_simulation)  # 模拟
 
             # 采集原始概率分布。象棋需要交换红黑双方位置对应的概率分布
-
             pi_target = mcts.get_pi(1.0)
             if env.player_to_move == 1 and hasattr(env, "switch_side_policy"):
                 pi_target = env.switch_side_policy(pi_target)
@@ -157,25 +160,16 @@ class SelfPlayManager:
             samples.append((state, pi_target, -q, env.player_to_move))
 
             # 前期高温，后期低温。根据mcts模拟的概率分布进行落子
-            if start_from_beginning and steps < settings['tao_switch_steps']:
-                temperature = 1.0
+            if start_from_beginning and steps < exploration_steps:
+                tau = np.power(tau_decay_rate, steps)
             else:
-                temperature = 0.1
-            pi = mcts.get_pi(temperature)  # 获取mcts的概率分布pi
-            # debug
-            if np.isnan(pi).any():
-                self.logger.error(f'Found NaN in pi')
-                self.logger.error(env.get_board_str(env.state, env.player_to_move, colorize=False))
-                self.logger.error(f'current winner:{env.winner}')
-                self.logger.error(f'last move:{env.action2move(env.last_action)}')
-                self.logger.error(f'player to move:{env.player_to_move}')
-                self.logger.error(f'sum of child_n: {mcts.root.child_n.sum()}')
-                self.logger.error(f'sum of valid child_n: {mcts.root.child_n[mcts.root.valid_actions].sum()}')
-                self.logger.error(f'any of child_n is nan:{np.isnan(mcts.root.child_n).any()}')
-                self.logger.error(f'valid child_n: {mcts.root.child_n[mcts.root.valid_actions]}')
+                tau = 0
+            pi = mcts.get_pi(tau)  # 获取mcts的概率分布pi
             action = np.random.choice(len(pi), p=pi)
             env.step(action)  # 执行落子
+            # env.render()
             mcts.apply_action(action)  # mcts也要根据action进行对应裁剪
+
             steps += 1
 
             # 避免大量无意义走棋，提前终止
@@ -203,10 +197,18 @@ class SelfPlayManager:
         # if env.winner in (-1, 2) and random.random() < 0.5:
         #     return [], env.winner
 
+        if steps < 20:
+            keep_prob = (steps / 20) ** 2
+            if random.random() > keep_prob:
+                return [], 2
+
         # 以当前玩家视角获取reward，胜1负-1平0
         for i in range(len(samples)):
             state, pi, q, p = samples[i]
             z = -1.0 if env.winner == 1 - p else 1.0 if env.winner == p else 0.0
+            # 奖励折扣，鼓励短赢和长输
+            gamma = 0.99
+            z = z * np.power(gamma, steps)
             # q与z加权使用
             alpha = 0.5
             v = alpha * z + (1 - alpha) * q
@@ -222,7 +224,7 @@ class SelfPlayManager:
         # 额外提交20%任务，总数达到后停止，避免个别长时间等待
         stop_signal = threading.Event()
         futures = [self.pool.submit(self.evaluation_worker, iteration, stop_signal) for _ in
-                   range(int(n_games * 1.2))]
+                   range(int(n_games))]
         win_count, lose_count, draw_count, win_rate, total_steps = 0, 0, 0, 0.0, 0
         # 进度条
         with tqdm(total=n_games, desc=f'{iteration} VS {self.best_index}') as pbar:
@@ -249,7 +251,7 @@ class SelfPlayManager:
 
         self.logger.info(
             f'Model {iteration} VS {self.best_index}，胜:{win_count},负:{lose_count},平:{draw_count}, 胜率{win_rate:.2%}。')
-        if win_rate > 0.5:  # 通过测试
+        if win_rate > 0.52:  # 通过测试
             self.best_index = iteration
             save_best_index(iteration)
             require_eval_model_update(iteration)
@@ -264,11 +266,6 @@ class SelfPlayManager:
         """iteration对战最佳模型，随机先手顺序。
         :return 0新模型胜，1老模型胜，-1平"""
         env = self.env_class()
-        start_from_beginning = True
-        # 有一定概率使用随机开局
-        if len(self.opening_buffer) > 50 and random.random() < 0.5:
-            env.state = self.opening_buffer.sample()
-            start_from_beginning = False
         # 随机先后手
         model_list = [iteration, self.best_index] if random.random() < 0.5 else [self.best_index, iteration]
         competitors = [NeuronMCTS.make_socket_mcts(
@@ -281,13 +278,16 @@ class SelfPlayManager:
         # 随机模拟测试
         n_simulation = 300
         steps = 0
+        exploration_steps = settings['evaluation']['exploration_steps']
+        tau_decay_rate = settings['evaluation']['tau_decay_rate']
 
         while not env.terminated and not env.truncated:
             mcts = competitors[env.player_to_move]
             mcts.run(n_simulation)
             # 前几步赋予随机性，避免棋局雷同
-            if steps < settings['tao_switch_steps'] and start_from_beginning:
-                pi = mcts.get_pi(0.25)
+            if steps < exploration_steps:
+                tau = np.power(tau_decay_rate, steps)
+                pi = mcts.get_pi(tau)
                 action = np.random.choice(len(pi), p=pi)
             else:
                 action = int(np.argmax(mcts.root.child_n))

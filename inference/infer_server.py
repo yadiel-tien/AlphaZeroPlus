@@ -51,7 +51,7 @@ class InferServer(InferenceEngine):
 
     def _cleanup_idle_server(self) -> None:
         """定期检查，如果没有客户端连接就清理掉。以防存在一些情况会出现无客户端连接又未还存活的情况"""
-        while not self._stop_event.wait(30):
+        while not self.stop_event.wait(30):
             with self.connection_lock:
                 if self.client_count <= 0:
                     require_infer_removal(self.name)
@@ -75,7 +75,7 @@ class InferServer(InferenceEngine):
     def _listen_loop(self):
         """监听socket发来的请求"""
         self._setup_socket()
-        while not self._stop_event.is_set():
+        while not self.stop_event.is_set():
             try:
                 # accept会阻塞，无法检查running状态，设置超时继续
                 conn, _ = self._server_sock.accept()
@@ -85,7 +85,7 @@ class InferServer(InferenceEngine):
             except socket.timeout:
                 continue
             except OSError as e:
-                if self._stop_event.is_set():
+                if self.stop_event.is_set():
                     # 预期中的错误：服务器正在关闭
                     self.logger.debug(f"Server {self.name} socket closed during shutdown")
                     break
@@ -101,7 +101,7 @@ class InferServer(InferenceEngine):
     def handle_client(self, client_sock: socket.socket) -> None:
         """socket接收到state，通过队列发送给推理线程"""
         client_sock.settimeout(1)
-        while not self._stop_event.is_set():
+        while not self.stop_event.is_set():
             try:
                 data = recv(client_sock)
                 if isinstance(data, np.ndarray):

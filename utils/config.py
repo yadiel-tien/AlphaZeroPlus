@@ -28,17 +28,24 @@ class NetConfig(TypedDict):
     n_value_hidden_channels: int  # 价值头隐藏层fc输出通道
 
 
+class TemperatureConfig(TypedDict):
+    tau_decay_rate: float
+    exploration_steps: int
+
+
 class GameConfig(TypedDict):
     screen_size: tuple[int, int]
     grid_size: float
     img_path: str
-    tensor_shape: tuple[int, ...]
-    state_shape: tuple[int, ...]
-    tao_switch_steps: int
+    tensor_shape: tuple[int, int, int]
+    state_shape: tuple[int, int, int]
     augment_times: int
     max_iters: int
+    buffer_size: int
     avg_game_steps: int
     default_net: NetConfig
+    selfplay: TemperatureConfig
+    evaluation: TemperatureConfig
 
 
 class AppConfig(TypedDict):
@@ -73,13 +80,21 @@ CONFIG: AppConfig = {
     'ChineseChess': {
         'screen_size': (600, 800),
         'grid_size': 54,
-        'tensor_shape': (10, 9, 20),
-        'state_shape': (10, 9, 7),
+        'tensor_shape': (20, 10, 9),
+        'state_shape': (7, 10, 9),
         'img_path': './graphics/chess/board.jpeg',
-        'tao_switch_steps': 30,
         'augment_times': 2,
         'max_iters': 1000,
+        'buffer_size': 500_000,
         'avg_game_steps': 80,
+        'selfplay': {
+            'tau_decay_rate': 0.92,
+            'exploration_steps': 30
+        },
+        'evaluation': {
+            'tau_decay_rate': 0.8,
+            'exploration_steps': 10
+        },
         'default_net': {
             'in_channels': 20,  # 输入通道数
             'n_filters': 256,  # 卷积层filter数量
@@ -95,13 +110,21 @@ CONFIG: AppConfig = {
     'Gomoku': {
         'screen_size': (600, 800),
         'grid_size': 35.2857,
-        'tensor_shape': (15, 15, 2),
-        'state_shape': (15, 15, 2),
+        'tensor_shape': (2, 15, 15),
+        'state_shape': (2, 15, 15),
         'img_path': './graphics/gomoku/board.jpeg',
-        'tao_switch_steps': 4,
-        'augment_times': 16,
-        'max_iters': 800,
+        'augment_times': 8,
+        'max_iters': 100,
+        'buffer_size': 150_000,
         'avg_game_steps': 40,
+        'selfplay': {
+            'tau_decay_rate': 0.8,
+            'exploration_steps': 10
+        },
+        'evaluation': {
+            'tau_decay_rate': 0.65,
+            'exploration_steps': 4
+        },
         'default_net': {
             'in_channels': 2,  # 输入通道数
             'n_filters': 256,  # 卷积层filter数量
@@ -128,7 +151,7 @@ CONFIG: AppConfig = {
     'best_index_name': 'best_index.pkl',
     'ema_name': 'ema.pkl',
     'rates_dir': './rates/',
-    'training_steps_per_sample': 10
+    'training_steps_per_sample': 20
 }
 
 game_name = CONFIG['game_name']

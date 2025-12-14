@@ -9,7 +9,6 @@ import socket
 import numpy as np
 from torch.utils.tensorboard import SummaryWriter
 
-from network.functions import read_latest_index
 from network.network import Net
 from utils.replay import ReplayBuffer
 from utils.types import EnvName
@@ -36,8 +35,8 @@ class TrainServer(InferServer):
         self.total_steps_trained = 0
         # buffer
         self.buffer = ReplayBuffer(500_000, 2048)
-        # 加载最新存档
-        self.load_checkpoint(read_latest_index(self.env_name))
+        # fit model与eval model一致
+        self.load_checkpoint(self.model_index)
         # 可视化记录
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.writer = SummaryWriter(log_dir=f'runs/{self.env_name}_{timestamp}')
@@ -81,7 +80,7 @@ class TrainServer(InferServer):
     def _listen_loop(self) -> None:
         """监听socket发来的请求"""
         self._setup_socket()
-        while not self._stop_event.is_set():
+        while not self.stop_event.is_set():
             try:
                 # accept会阻塞，无法检查running状态，设置超时继续
                 conn, _ = self._server_sock.accept()
@@ -92,14 +91,14 @@ class TrainServer(InferServer):
                 self.fit_logger.info(f"[-] InferenceServer {self.name} listen loop was forced to shutdown: {e}")
                 break
             except Exception as e:
-                if self._stop_event.is_set():
+                if self.stop_event.is_set():
                     break
                 self.fit_logger.error(e)
 
     def handle_client(self, client_sock: socket.socket) -> None:
         """socket接收到state，通过队列发送给推理线程"""
         client_sock.settimeout(1)
-        while not self._stop_event.is_set():
+        while not self.stop_event.is_set():
             try:
                 data = recv(client_sock)
                 if isinstance(data, np.ndarray):  # 接收到state，放入推理队列
@@ -175,7 +174,7 @@ class TrainServer(InferServer):
             # 交叉熵损失，使policy的结果趋近mcts模拟出来的pi，[B,H*W]->scalar
             policy_loss = - torch.sum(pis * torch.log_softmax(policy_logits, dim=1), dim=1).mean()
             # 均方差损失，使value的结果趋近与mcts模拟出来的z，[B]。
-            value_loss = torch.nn.functional.mse_loss(values, zs) * 5
+            value_loss = torch.nn.functional.mse_loss(values, zs)
 
             # 用总的损失进行反向梯度更新
             loss = policy_loss + value_loss

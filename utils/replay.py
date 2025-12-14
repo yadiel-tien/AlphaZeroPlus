@@ -45,7 +45,7 @@ class ReplayBuffer:
         if self.size < self.batch_size:
             raise ValueError(f'No enough data! Current size is {self.size},required size is {self.batch_size}.')
         indices = np.random.choice(self.size, size=self.batch_size, replace=False)
-        states = self.state_buffer[indices].transpose(0, 3, 1, 2).copy()
+        states = self.state_buffer[indices].copy()
         probs = self.policy_buffer[indices].copy()
         values = self.value_buffer[indices].copy()
         # 复制避免引用过多，导致无法及时清理资源

@@ -1,4 +1,4 @@
-# cython: boundscheck=False, wraparound=False, cdivision=True
+# cython: boundscheck=False, wraparound=False, cdivision=True,initializedcheck=False
 import numpy as np
 from libc.stdint cimport int32_t
 cimport numpy as cnp
@@ -6,8 +6,23 @@ cimport numpy as cnp
 ctypedef cnp.int32_t INT32_t
 
 # ----------------------
-# 棋子合法移动函数
+# 定义常量
 # ----------------------
+cdef int DIRECTIONS[4][2]
+DIRECTIONS = [[1, 0], [-1, 0], [0, 1], [0, -1]]
+
+cdef int HORSE_MOVES[8][4]
+HORSE_MOVES = [
+    [-2, -1, -1, 0],
+    [-2, 1, -1, 0],
+    [-1, -2, 0, -1],
+    [-1, 2, 0, 1],
+    [1, -2, 0, -1],
+    [1, 2, 0, 1],
+    [2, -1, 1, 0],
+    [2, 1, 1, 0]
+]
+
 # 四个数字分别为tr,tc,br,bc，即目的地和象眼坐标。某个位置的开始坐标需要通过lookup表查得
 cdef int BISHOP_MOVES_DATA[32][4]
 BISHOP_MOVES_DATA = [
@@ -98,13 +113,11 @@ cdef int add_rook_dest(INT32_t * board, int r, int c, INT32_t *result) nogil:
     cdef int count = 0
 
     cdef int dr, dc, tr, tc, target, i
-    cdef int directions[4][2]
-    directions = [[1, 0], [-1, 0], [0, 1], [0, -1]]
     cdef bint own_side = board[r * 9 + c] < 7
 
     for i in range(4):
-        dr = directions[i][0]
-        dc = directions[i][1]
+        dr = DIRECTIONS[i][0]
+        dc = DIRECTIONS[i][1]
         tr = r
         tc = c
         while True:
@@ -130,25 +143,14 @@ cdef int add_horse_dest(INT32_t * board, int r, int c, INT32_t * result) nogil:
     cdef int count = 0
 
     cdef int tr, tc, br, bc, target, i
-    cdef int horse_moves[8][4]
-    horse_moves = [
-        [-2, -1, -1, 0],
-        [-2, 1, -1, 0],
-        [-1, -2, 0, -1],
-        [-1, 2, 0, 1],
-        [1, -2, 0, -1],
-        [1, 2, 0, 1],
-        [2, -1, 1, 0],
-        [2, 1, 1, 0]
-    ]
 
     cdef bint own_side = board[r * 9 + c] < 7
 
     for i in range(8):
-        tr = r + horse_moves[i][0]
-        tc = c + horse_moves[i][1]
-        br = r + horse_moves[i][2]
-        bc = c + horse_moves[i][3]
+        tr = r + HORSE_MOVES[i][0]
+        tc = c + HORSE_MOVES[i][1]
+        br = r + HORSE_MOVES[i][2]
+        bc = c + HORSE_MOVES[i][3]
 
         if tr < 0 or tr >= 10 or tc < 0 or tc >= 9:
             continue
@@ -214,16 +216,13 @@ cdef int add_king_dest(INT32_t * board, int r, int c, INT32_t *result) nogil:
     """将/帅的合法移动"""
     cdef int count = 0
 
-    cdef int moves[4][2]
-    moves = [[1, 0], [-1, 0], [0, 1], [0, -1]]
-
     cdef int i, tr, tc, target
     cdef bint is_red = board[r * 9 + c] == 4
     cdef int dr, rival_king
 
     for i in range(4):
-        tr = r + moves[i][0]
-        tc = c + moves[i][1]
+        tr = r + DIRECTIONS[i][0]
+        tc = c + DIRECTIONS[i][1]
         if tr < 0 or tr >= 10 or tc < 0 or tc >= 9:
             continue
         if is_red and tr < 7:
@@ -267,16 +266,13 @@ cdef int add_cannon_dest(INT32_t * board, int r, int c, INT32_t * result) nogil:
     """炮的合法移动"""
     cdef int count = 0
 
-    cdef int directions[4][2]
-    directions = [[1, 0], [-1, 0], [0, 1], [0, -1]]
-
     cdef int dr, dc, tr, tc, target, i
     cdef bint own_side = board[r * 9 + c] < 7
     cdef bint found_screen
 
     for i in range(4):
-        dr = directions[i][0]
-        dc = directions[i][1]
+        dr = DIRECTIONS[i][0]
+        dc = DIRECTIONS[i][1]
         tr = r + dr
         tc = c + dc
         found_screen = False
@@ -341,7 +337,8 @@ cdef int add_pawn_dest(INT32_t * board, int r, int c, INT32_t * result) nogil:
 
         for dc in range(2):  # -1,1
             tr = r
-            tc = c + <int> ((-1) ** dc)
+            # 1-2*dc将0，1映射为1，-1
+            tc = c + 1 - 2 * dc
             if 0 <= tc < 9:
                 target = board[tr * 9 + tc]
                 if target == -1 or (target < 7) != is_red:
@@ -359,7 +356,7 @@ def get_valid_actions(cnp.ndarray[INT32_t, ndim=3, mode='c'] state,
     """Cython版本的合法动作获取"""
     cdef int count = 0
 
-    cdef cnp.ndarray[INT32_t, ndim=2, mode='c'] board_2d = np.ascontiguousarray(state[:, :, 0])
+    cdef cnp.ndarray[INT32_t, ndim=2, mode='c'] board_2d = state[0]
     cdef int32_t * move2action_ptr = <int32_t *> move2action.data
     cdef int32_t * board_ptr = <int32_t *> board_2d.data
     cdef int r, c, piece, action_id, dest_num, tr, tc, i
@@ -415,7 +412,7 @@ def get_destinations_for_piece(cnp.ndarray[INT32_t, ndim=3, mode='c'] state,
                                int r,
                                int c):
     """获取一个棋子的合法动作"""
-    cdef cnp.ndarray[INT32_t, ndim=2, mode='c'] board_2d = np.ascontiguousarray(state[:, :, 0])
+    cdef cnp.ndarray[INT32_t, ndim=2, mode='c'] board_2d = state[0]
     cdef int32_t * move2action_ptr = <int32_t *> move2action.data
     cdef int32_t * board_ptr = <int32_t *> board_2d.data
     cdef int piece, action_id, dest_num, tr, tc, i

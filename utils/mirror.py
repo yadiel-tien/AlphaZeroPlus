@@ -3,11 +3,11 @@ from numpy.typing import NDArray
 import random
 
 
-def random_mirror_state_ip(state: NDArray, env_name: str) -> tuple[NDArray, int]:
+def random_mirror_state(state: NDArray, env_name: str) -> tuple[NDArray, int]:
     """对 state 进行随机对称变换（旋转或翻转），会原地更改state
 
     参数：
-        state: 棋盘状态张量，board_shape 为 (H, W, C)
+        state: 棋盘状态张量，board_shape 为 (C,H, W)
         idx: 对称操作索引（0~7）：
        - 0: 原样
        - 1~3: 顺时针旋转 90°/180°/270°
@@ -21,14 +21,14 @@ def random_mirror_state_ip(state: NDArray, env_name: str) -> tuple[NDArray, int]
         变换后的 ndarray"""
     if env_name == 'ChineseChess':
         # 象棋只支持左右翻转
-        if random.random() < 0.5 :
+        if random.random() < 0.5:
             return apply_symmetry(state, 4), 4
 
         return state, 0
 
     if env_name == 'Gomoku':
         shape = state.shape
-        if shape[0] != shape[1]:
+        if shape[2] != shape[1]:
             indices = (0, 2, 4, 5)
         else:
             indices = range(8)
@@ -48,36 +48,49 @@ def apply_symmetry(array: NDArray, idx: int) -> NDArray:
        - 5: 上下镜像
        - 6: 主对角线翻转
        - 7: 副对角线翻转"""
-    if array.ndim == 3:
-        axes = (1, 0, 2)
-    elif array.ndim == 2:
-        axes = (1, 0)
-    else:
-        raise ValueError('array must be 2D or 3D')
-
     if idx == 0:
         return array.copy()
-    elif idx < 4:  # 旋转 0°, 90°, 180°, 270°
-        return np.rot90(array, k=idx)
-    elif idx == 4:  # 水平翻转
-        return np.fliplr(array)
-    elif idx == 5:  # 垂直翻转
-        return np.flipud(array)
-    elif idx == 6:  # 主对角线翻转，转置
-        return np.transpose(array, axes=axes)
-    elif idx == 7:  # 副对角线翻转,先旋转180度，再转置
-        rotated = np.rot90(array, k=2)
-        return np.transpose(rotated, axes=axes)
-    else:
-        raise ValueError('Invalid index')
+    # 3D数组：对每个通道应用相同的2D变换
+    if array.ndim == 3:
+        if idx < 4:  # 旋转
+            # 使用列表推导式
+            return np.rot90(array, k=idx, axes=(1, 2))
+        elif idx == 4:  # 水平翻转
+            return np.flip(array, axis=2)  # 沿宽度维度翻转
+        elif idx == 5:  # 垂直翻转
+            return np.flip(array, axis=1)  # 沿高度维度翻转
+        elif idx == 6:  # 主对角线翻转
+            return np.transpose(array, axes=(0, 2, 1))
+        elif idx == 7:  # 副对角线翻转
+            # 先旋转180度，再转置
+            rotated = np.rot90(array, k=2, axes=(1, 2))
+            return np.transpose(rotated, axes=(0, 2, 1))
+        else:
+            raise ValueError('Invalid index')
+    elif array.ndim == 2:
+        if idx < 4:  # 旋转 0°, 90°, 180°, 270°
+            return np.rot90(array, k=idx)
+        elif idx == 4:  # 水平翻转
+            return np.fliplr(array)
+        elif idx == 5:  # 垂直翻转
+            return np.flipud(array)
+        elif idx == 6:  # 主对角线翻转，转置
+            return array.T
+        elif idx == 7:  # 副对角线翻转,先旋转180度，再转置
+            rotated = np.rot90(array, k=2)
+            return rotated.T
+        else:
+            raise ValueError('Invalid index')
+
+    raise ValueError('array must be 2D or 3D')
 
 
 def mirror_board_policy(policy: NDArray, idx: int, board_shape: tuple[int, ...]) -> NDArray:
     """适用于动作空间跟二维棋盘一一对应的情况"""
-    if board_shape[0] != board_shape[1] and idx in (1, 3, 6, 7):
+    if board_shape[2] != board_shape[1] and idx in (1, 3, 6, 7):
         raise ValueError("Symmetry functions require a square board (rows == cols).")
 
-    reshaped = policy.reshape(board_shape[:2])
+    reshaped = policy.reshape(board_shape[1:])
     return apply_symmetry(reshaped, idx).flatten()
 
 
@@ -99,12 +112,12 @@ def mirror_action_policy(policy: NDArray, idx: int, lr_map: NDArray, ud_map: NDA
         raise ValueError('Invalid index')
 
 
-def reverse_board_policy(policy: NDArray, idx: int, board_shape: tuple[int, ...]) -> NDArray:
+def reverse_board_policy(policy: NDArray, idx: int, board_shape: tuple[int, int, int]) -> NDArray:
     """反转概率分布,概率可以跟棋盘平面一一对应"""
-    if board_shape[0] != board_shape[1] and idx in (1, 3, 6, 7):
+    if board_shape[2] != board_shape[1] and idx in (1, 3, 6, 7):
         raise ValueError("Symmetry functions require a square board (rows == cols).")
 
-    reshaped = policy.reshape(board_shape[:2])
+    reshaped = policy.reshape(board_shape[1:])
     if idx < 4:  # 逆向旋转
         return np.rot90(reshaped, k=-idx).flatten()
     elif idx == 4:  # 水平翻转
@@ -127,8 +140,8 @@ def test_apply_symmetry():
         [7, 8, 9]
     ])
 
-    # 构造简单 3D 棋盘（state 示例，最后一维为通道）
-    board_3d = np.stack([board_2d, board_2d + 10], axis=-1)  # board_shape = (3, 3, 2)
+    # 构造简单 3D 棋盘（state 示例，最后0维为通道）
+    board_3d = np.stack([board_2d, board_2d + 10], axis=0)  # board_shape = (2,3, 3)
     transformed_list = []
     print("=== Testing 2D transformations ===")
     for idx in range(8):
@@ -143,8 +156,8 @@ def test_apply_symmetry():
     for idx in range(8):
         try:
             ud_transformed = apply_symmetry(board_3d, idx)
-            print(f"idx {idx}:\n{ud_transformed[:, :, 0]}\n")  # 打印第一个通道
-            print(f"{ud_transformed[:, :, 1]}\n")  # 打印第二个通道
+            print(f"idx {idx}:\n{ud_transformed[0]}\n")  # 打印第一个通道
+            print(f"{ud_transformed[1]}\n")  # 打印第二个通道
         except Exception as e:
             print(f"3D failed at idx={idx}: {e}")
 
@@ -152,7 +165,7 @@ def test_apply_symmetry():
     for idx in range(8):
         try:
             ud_transformed = transformed_list[idx].flatten()
-            reversed_arr = reverse_board_policy(ud_transformed, idx, (3, 3))
+            reversed_arr = reverse_board_policy(ud_transformed, idx, (2, 3, 3))
             print(f"idx {idx}:\n{reversed_arr.reshape((3, 3))}\n")
         except Exception as e:
             print(f"3D failed at idx={idx}: {e}")
@@ -165,7 +178,7 @@ def test_apply_symmetry():
     ud_reversed_policy = mirror_action_policy(ud_transformed, 5, ChineseChess.mirror_lr_actions,
                                               ChineseChess.mirror_ud_actions)
     lr_transformed = mirror_action_policy(policy, 4, ChineseChess.mirror_lr_actions, ChineseChess.mirror_ud_actions)
-    lr_reversed_policy = mirror_action_policy(ud_transformed, 4, ChineseChess.mirror_lr_actions,
+    lr_reversed_policy = mirror_action_policy(lr_transformed, 4, ChineseChess.mirror_lr_actions,
                                               ChineseChess.mirror_ud_actions)
     for action in range(50, 60):
         r, c, to_r, to_c = ChineseChess.action2move(action)

@@ -58,8 +58,8 @@ class GomokuUI(GameUI):
     def draw_pieces(self):
 
         # 获取所有白棋和黑棋的位置
-        white_positions = np.argwhere(self.env.state[:, :, 1 - self.env.player_to_move])
-        black_positions = np.argwhere(self.env.state[:, :, self.env.player_to_move])
+        white_positions = np.argwhere(self.env.state[1 - self.env.player_to_move])
+        black_positions = np.argwhere(self.env.state[self.env.player_to_move])
 
         # 绘制所有白棋
         for pos in white_positions:
@@ -103,7 +103,7 @@ class GomokuUI(GameUI):
             self.screen.blit(self.cursor_pic, (x, y))
 
     def draw_boundary(self):
-        if self.env.shape[:2] == (15, 15):
+        if self.env.shape[1:] == (15, 15):
             return
         # 外部轮廓
         x0 = -7 * settings['grid_size'] + self.rect.centerx - 17
@@ -112,7 +112,7 @@ class GomokuUI(GameUI):
         h0 = settings['grid_size'] * 15
         # 可下棋区域
         x, y = self._grid2pos((0, 0))
-        h, w, _ = self.env.shape
+        _, h, w = self.env.shape
         w *= settings['grid_size']
         h *= settings['grid_size']
         overlay = pygame.Surface((w0, h0), pygame.SRCALPHA)

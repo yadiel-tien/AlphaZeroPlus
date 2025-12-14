@@ -8,7 +8,7 @@ from env.functions import get_class
 from utils.types import EnvName
 from .functions import send, recv
 from utils.config import CONFIG
-from utils.mirror import random_mirror_state_ip
+from utils.mirror import random_mirror_state
 from .request import QueueRequest
 
 
@@ -133,7 +133,7 @@ def preprocess_state(state: NDArray, env_name: str, is_self_play: bool) -> tuple
     """selfplay时随机翻转state，并返回翻转id，否则不改变state，id=0"""
     symmetric_idx = 0
     if is_self_play:
-        state, symmetric_idx = random_mirror_state_ip(state, env_name)
+        state, symmetric_idx = random_mirror_state(state, env_name)
     return state, symmetric_idx
 
 
