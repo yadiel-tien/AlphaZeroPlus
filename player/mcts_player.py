@@ -20,21 +20,19 @@ class MCTSPlayer(Player):
     def description(self) -> str:
         return 'MCTS'
 
-    def get_action(self, state: NDArray, last_action: int, player_to_move: int) -> int:
-        print('思考中...')
-        self._run_mcts(state, last_action)
-        self.env_class.describe_move(state, self.pending_action)
+    def get_action(self) -> int:
         return self.pending_action
 
-    def update(self,  state: NDArray, last_action: int, player_to_move: int) -> None:
-        if not self._thinking:
+    def update(self, state: NDArray, last_action: int, player_to_move: int) -> None:
+        if not self.is_thinking:
             # 新线程运行MCTS
             self.is_thinking = True
-            self._thread = threading.Thread(target=self._run_mcts, args=(state.copy(), last_action),
+            self._thread = threading.Thread(target=self.update_state, args=(state.copy(), last_action),
                                             name='MCTS run')
             self._thread.start()
 
-    def _run_mcts(self, state: np.ndarray, last_action: int) -> None:
+    def update_state(self, state: NDArray, last_action: int, player_to_move: int) -> None:
+        print('思考中...')
         if self.mcts is None:
             self.mcts = MCTS(state)
         else:
@@ -43,7 +41,7 @@ class MCTSPlayer(Player):
         self.mcts.run(self._n_simulation)
         # print(f'{self._iteration} iteration_to_remove took {time.time() - start:.2f} seconds')
         self.pending_action = self.mcts.choose_action()
-        self._thinking = False
+        self.is_thinking = False
 
     def reset(self) -> None:
         super().reset()

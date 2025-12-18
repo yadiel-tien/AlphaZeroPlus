@@ -13,8 +13,8 @@ class Human(Player):
     def description(self) -> str:
         return 'Human'
 
-    def get_action(self, state: NDArray, last_action: int, player_to_move: int) -> int:
-        return self.env_class.handle_human_input(state, last_action, player_to_move)
+    def update_state(self, state: NDArray, last_action: int, player_to_move: int) -> int:
+        self.pending_action = self.env_class.handle_human_input(state, last_action, player_to_move)
 
     def reset(self) -> None:
         super().reset()

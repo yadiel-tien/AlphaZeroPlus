@@ -106,7 +106,7 @@ class ChineseChess(BaseEnv):
                     return GameResult.LOSE
 
         # 100步未吃子判和
-        if state[-1, 0, 0] >= 100:
+        if state[-1, 0, 0] >= 30:
             return GameResult.DRAW
 
         # 双方都无进攻棋子判和,有则游戏继续

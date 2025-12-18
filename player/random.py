@@ -12,5 +12,5 @@ class RandomPlayer(Player):
     def description(self) -> str:
         return 'Random Player'
 
-    def get_action(self, state: NDArray, last_action: int, player_to_move: int) -> int:
-        return random.choice(self.env_class.get_valid_actions(state, player_to_move))
+    def update_state(self, state: NDArray, last_action: int, player_to_move: int) -> None:
+        self.pending_action = random.choice(self.env_class.get_valid_actions(state, player_to_move))

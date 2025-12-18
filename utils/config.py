@@ -66,6 +66,7 @@ class AppConfig(TypedDict):
     ema_name: str
     rates_dir: str
     training_steps_per_sample: int
+    win_threshold: float
 
 
 CONFIG: AppConfig = {
@@ -84,12 +85,12 @@ CONFIG: AppConfig = {
         'state_shape': (7, 10, 9),
         'img_path': './graphics/chess/board.jpeg',
         'augment_times': 2,
-        'max_iters': 1000,
+        'max_iters': 500,
         'buffer_size': 500_000,
         'avg_game_steps': 80,
         'selfplay': {
-            'tau_decay_rate': 0.92,
-            'exploration_steps': 30
+            'tau_decay_rate': 0.98,
+            'exploration_steps': 50
         },
         'evaluation': {
             'tau_decay_rate': 0.8,
@@ -142,7 +143,6 @@ CONFIG: AppConfig = {
     'dirichlet': 0.2,
     'base_url': 'http://192.168.0.126:5000/',
     'device': 'cuda:0',
-    'game_name': 'Gomoku',
     'socket_path_prefix': './inference/socks/',
     'hub_socket_path': './inference/socks/hub.sock',
     'train_socket_path': cwd + '/inference/socks/train.sock',
@@ -151,7 +151,9 @@ CONFIG: AppConfig = {
     'best_index_name': 'best_index.pkl',
     'ema_name': 'ema.pkl',
     'rates_dir': './rates/',
-    'training_steps_per_sample': 20
+    'training_steps_per_sample': 20,
+    'win_threshold': 0.52,
+    'game_name': 'ChineseChess'
 }
 
 game_name = CONFIG['game_name']

@@ -20,7 +20,7 @@ from .request import SocketRequest
 
 
 class InferServer(InferenceEngine):
-    def __init__(self, model_id: int, env_name: EnvName, max_listen_workers: int = 100):
+    def __init__(self, model_id: int, env_name: EnvName, max_listen_workers: int = 110):
         self.max_listen_workers = max_listen_workers
         self._listen_thread: threading.Thread | None = None
         self._listen_pool: ThreadPoolExecutor | None = None

@@ -11,7 +11,7 @@ from inference.functions import get_checkpoint_path
 from utils.logger import get_logger
 from utils.state_buffer import StateBuffer
 from utils.replay import ReplayBuffer
-from utils.config import game_name, settings
+from utils.config import game_name, settings, CONFIG
 from mcts.deepMcts import NeuronMCTS
 from inference.client import require_fit, require_eval_model_update, \
     require_model_removal, require_statistic_reset
@@ -70,11 +70,11 @@ class SelfPlayManager:
         :param n_games: 每次自博弈进行的对局数量"""
 
         start = time.time()
-        # 动态n_simulation,最大到1200
-        n_simulation = 200 + iteration * 600 // settings['max_iters']
+        # 动态n_simulations,最大到1200
+        n_simulations = 200 + iteration * 600 // settings['max_iters']
 
         stop_signal = threading.Event()
-        futures = [self.pool.submit(self.self_play_worker, n_simulation, stop_signal) for _ in
+        futures = [self.pool.submit(self.self_play_worker, n_simulations, stop_signal) for _ in
                    range(int(n_games * 1.5))]
         data_count, win_count, lose_count, draw_count, truncate_count, completed = 0, 0, 0, 0, 0, 0
         with tqdm(total=n_games, desc='Self-play') as pbar:
@@ -109,7 +109,7 @@ class SelfPlayManager:
         # 总结
         duration = time.time() - start
         self.logger.info(
-            f'selfplay {completed}局游戏，每步模拟{n_simulation}次，收集到原始数据{data_count}条,\n'
+            f'selfplay {completed}局游戏，每步模拟{n_simulations}次，收集到原始数据{data_count}条,\n'
             f'win rate:{win_count / completed:.2%},lose rate:{lose_count / completed:.2%},'
             f'draw rate:{draw_count / completed :.2%},truncate rate:{truncate_count / completed :.2%}。')
         self.logger.info(
@@ -117,7 +117,7 @@ class SelfPlayManager:
         )
         return data_count
 
-    def self_play_worker(self, n_simulation: int, stop_signal: threading.Event) -> tuple[list[
+    def self_play_worker(self, n_simulations: int, stop_signal: threading.Event) -> tuple[list[
         tuple[NDArray, NDArray, float]], int]:
         """进行一局游戏，收集经验
         :return [(state,pi_move,q),...],winner.winner0,1代表获胜玩家，-1代表平局"""
@@ -147,7 +147,7 @@ class SelfPlayManager:
             # if steps == settings['avg_game_steps'] // 2 and start_from_beginning and (0.4 < mcts.root.win_rate < 0.6):
             #     self.midgame_buffer.append(env.state)
 
-            mcts.run(n_simulation)  # 模拟
+            mcts.run(n_simulations)  # 模拟
 
             # 采集原始概率分布。象棋需要交换红黑双方位置对应的概率分布
             pi_target = mcts.get_pi(1.0)
@@ -163,7 +163,7 @@ class SelfPlayManager:
             if start_from_beginning and steps < exploration_steps:
                 tau = np.power(tau_decay_rate, steps)
             else:
-                tau = 0
+                tau = 0.1
             pi = mcts.get_pi(tau)  # 获取mcts的概率分布pi
             action = np.random.choice(len(pi), p=pi)
             env.step(action)  # 执行落子
@@ -171,15 +171,6 @@ class SelfPlayManager:
             mcts.apply_action(action)  # mcts也要根据action进行对应裁剪
 
             steps += 1
-
-            # 避免大量无意义走棋，提前终止
-            # 根据棋子数设定步数限制，如果有吃子，步数可以大些，吃子越多越大
-            # if isinstance(env, ChineseChess):
-            #     no_capture_count = round(float(state[0, 0, -1]) * 100)
-            #     # piece_count = np.count_nonzero(env.state[:, :, 0] + 1)
-            #     # step_limit = 100 - (piece_count - 9) * 3
-            #     if no_capture_count > 30 or steps > 150:
-            #         break
 
             # 收到停止信号，截断游戏
             if stop_signal.is_set():
@@ -197,8 +188,8 @@ class SelfPlayManager:
         # if env.winner in (-1, 2) and random.random() < 0.5:
         #     return [], env.winner
 
-        if steps < 20:
-            keep_prob = (steps / 20) ** 2
+        if steps < 15:
+            keep_prob = (steps / 15) ** 2
             if random.random() > keep_prob:
                 return [], 2
 
@@ -207,12 +198,11 @@ class SelfPlayManager:
             state, pi, q, p = samples[i]
             z = -1.0 if env.winner == 1 - p else 1.0 if env.winner == p else 0.0
             # 奖励折扣，鼓励短赢和长输
-            gamma = 0.99
-            z = z * np.power(gamma, steps)
+            # gamma = 0.99
+            # z = z * np.power(gamma, steps)
             # q与z加权使用
             alpha = 0.5
             v = alpha * z + (1 - alpha) * q
-            # print("DEBUG sample winner,p,z,q，v:", env.winner, p, z, q, v)
 
             samples[i] = state, pi, v
 
@@ -226,6 +216,7 @@ class SelfPlayManager:
         futures = [self.pool.submit(self.evaluation_worker, iteration, stop_signal) for _ in
                    range(int(n_games))]
         win_count, lose_count, draw_count, win_rate, total_steps = 0, 0, 0, 0.0, 0
+        threshold = CONFIG['win_threshold']
         # 进度条
         with tqdm(total=n_games, desc=f'{iteration} VS {self.best_index}') as pbar:
             for future in as_completed(futures):
@@ -241,17 +232,22 @@ class SelfPlayManager:
                 win_count += winner == 0
                 lose_count += winner == 1
                 draw_count += winner == -1
+                score = win_count + draw_count / 2
                 completed = win_count + lose_count + draw_count
-                win_rate = (win_count + draw_count / 2) / completed
+                win_rate = score / completed
                 pbar.set_postfix({'win_rate': f'{win_rate:.2%}'})  # 进度条后面添加当前胜率
 
-                if completed >= n_games:
+                # 胜负已定，取消后面的比赛
+                already_won = score / n_games > threshold
+                already_lost = (score + n_games - completed) / n_games <= threshold
+
+                if completed >= n_games or already_won or already_lost:
                     stop_signal.set()
                     break
 
         self.logger.info(
-            f'Model {iteration} VS {self.best_index}，胜:{win_count},负:{lose_count},平:{draw_count}, 胜率{win_rate:.2%}。')
-        if win_rate > 0.52:  # 通过测试
+            f'Model {iteration} VS {self.best_index}，胜:{win_count},负:{lose_count},平:{draw_count},总:{completed}, 胜率{win_rate:.2%}。')
+        if win_rate > threshold:  # 通过测试
             self.best_index = iteration
             save_best_index(iteration)
             require_eval_model_update(iteration)
@@ -276,14 +272,14 @@ class SelfPlayManager:
             model_id=index
         ) for index in model_list]
         # 随机模拟测试
-        n_simulation = 300
+        n_simulations = 300
         steps = 0
         exploration_steps = settings['evaluation']['exploration_steps']
         tau_decay_rate = settings['evaluation']['tau_decay_rate']
 
         while not env.terminated and not env.truncated:
             mcts = competitors[env.player_to_move]
-            mcts.run(n_simulation)
+            mcts.run(n_simulations)
             # 前几步赋予随机性，避免棋局雷同
             if steps < exploration_steps:
                 tau = np.power(tau_decay_rate, steps)

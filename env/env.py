@@ -66,9 +66,10 @@ class BaseEnv(gym.Env, ABC):
         while True:
             if not silent:
                 print(f'-----player{index + 1} {players[index].description}-----')
-            players[index].update(self.state, self.last_action, self.player_to_move)
+            players[index].update_state(self.state, self.last_action, self.player_to_move)
             action = players[index].pending_action
             _, reward, terminated, truncated, _ = self.step(action)
+            self.describe_last_move()
             if not silent:
                 self.render()
             if terminated or truncated:

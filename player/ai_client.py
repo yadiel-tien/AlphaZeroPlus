@@ -40,16 +40,19 @@ class AIClient(Player):
         """不能阻塞，实时更新"""
         if not self.is_thinking:
             self.is_thinking = True
-            if self.status == ClientStatus.UNINITIATED:
-                threading.Thread(target=self.request_setup, args=(state, last_action, player_to_move),
-                                 daemon=True).start()
-            elif self.status == ClientStatus.DEACTIVATED:
-                threading.Thread(target=self._heartbeat_loop, daemon=True).start()
-            elif self.status == ClientStatus.IDLE:
-                threading.Thread(target=self.request_update, args=(state, last_action, player_to_move),
-                                 daemon=True).start()
-            else:
-                threading.Thread(target=self.request_action, daemon=True).start()
+            self.update_state(state, last_action, player_to_move)
+
+    def update_state(self, state: NDArray, last_action: int, player_to_move: int) -> None:
+        if self.status == ClientStatus.UNINITIATED:
+            threading.Thread(target=self.request_setup, args=(state, last_action, player_to_move),
+                             daemon=True).start()
+        elif self.status == ClientStatus.DEACTIVATED:
+            threading.Thread(target=self._heartbeat_loop, daemon=True).start()
+        elif self.status == ClientStatus.IDLE:
+            threading.Thread(target=self.request_update, args=(state, last_action, player_to_move),
+                             daemon=True).start()
+        else:
+            threading.Thread(target=self.request_action, daemon=True).start()
 
     def request_update(self, state: np.ndarray, last_action: int, player_to_move: int) -> None:
         """给server发请求，更新盘面"""

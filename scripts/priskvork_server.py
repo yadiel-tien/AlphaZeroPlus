@@ -130,10 +130,8 @@ class GomokuSession:
 
     def get_ai_move(self) -> str | None:
         """根据当前局面行棋，update函数适配ui，需放入循环体"""
-        while self.player.pending_action == -1:
-            if not self.is_running: return None
+        if self.player.pending_action == -1:
             self.player.update(self.env.state, self.env.last_action, self.env.player_to_move)
-            time.sleep(0.01)
 
         action = self.player.pending_action
         row, col = self.env.action2move(action)
