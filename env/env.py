@@ -29,18 +29,18 @@ class BaseEnv(gym.Env, ABC):
     @abstractmethod
     def handle_human_input(cls, state: NDArray, last_action: int, player_to_move: int) -> int:
         """无UI的情况下，通过控制台交互，将用户输入转换为动作输出"""
-        ...
+        raise NotImplementedError
 
     @abstractmethod
     def describe_last_move(self) -> None:
         """用于无UI界面，在控制台描述刚刚所走棋步."""
-        ...
+        raise NotImplementedError
 
     @classmethod
     @abstractmethod
     def convert_to_network(cls, state: NDArray, current_player: int) -> NDArray:
         """将逻辑state转换为适合神经网络的one-hot array"""
-        ...
+        raise NotImplementedError
 
     @classmethod
     def step_fn(cls, state: NDArray, action: int, player_to_move: int) -> tuple[
@@ -125,7 +125,7 @@ class BaseEnv(gym.Env, ABC):
     @abstractmethod
     def get_valid_actions(cls, state: NDArray, player_to_move: int) -> NDArray[np.int_]:
         """获取合法动作的类方法"""
-        ...
+        raise NotImplementedError
 
     def set_winner(self, winner: int) -> None:
         """设置winner，0,1代表获胜玩家，-1代表平局，2代表未决胜负。winner!=2时终止游戏terminated = True"""
@@ -141,29 +141,29 @@ class BaseEnv(gym.Env, ABC):
                :param state: 棋盘表示
                :param player_just_moved:相对于刚落子的玩家来说的结果， 0或1
                :return: 1胜，0平，-1负, 2未分胜负"""
-        ...
+        raise NotImplementedError
 
     @classmethod
     @abstractmethod
     def virtual_step(cls, state: NDArray[np.float32], action: int) -> NDArray[np.float32]:
         """只改变state，不计算输赢和奖励"""
-        ...
+        raise NotImplementedError
 
     @classmethod
     @abstractmethod
     def action2move(cls, action: int) -> tuple[int, ...]:
-        ...
+        raise NotImplementedError
 
     @classmethod
     @abstractmethod
     def move2action(cls, move: tuple[int, ...]) -> int:
-        ...
+        raise NotImplementedError
 
     @classmethod
     @abstractmethod
     def restore_policy(cls, policy: NDArray, symmetry_idx: int) -> NDArray:
         """根据symmetric_idx将神经网络产生的policy还原回去，因为喂给神经网络前进行了镜像反转"""
-        ...
+        raise NotImplementedError
 
     def reset_status(self) -> None:
         self.player_to_move = 0
@@ -178,9 +178,9 @@ class BaseEnv(gym.Env, ABC):
             - Gomoku 支持8种增强
         :param data: (state,pi,q)
         :return 增强后的列别[(state,pi,q)]"""
-        ...
+        raise NotImplementedError
 
     @classmethod
     @abstractmethod
     def get_board_str(cls, state: NDArray, player_to_move: int, colorize: bool = True) -> str:
-        ...
+        raise NotImplementedError

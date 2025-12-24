@@ -156,8 +156,9 @@ class SelfPlayManager:
             # 象棋表示state和神经网络state不一样，需要转换。五子棋也进行了接口匹配
             state = env.convert_to_network(env.state, env.player_to_move)
             # q代表对上个玩家的回报，-q代表当前玩家的回报
-            q = mcts.root.w / mcts.root.n
-            samples.append((state, pi_target, -q, env.player_to_move))
+            # q = mcts.root.w / mcts.root.n
+            # samples.append((state, pi_target, -q, env.player_to_move))
+            samples.append((state, pi_target,env.player_to_move))
 
             # 前期高温，后期低温。根据mcts模拟的概率分布进行落子
             if start_from_beginning and steps < exploration_steps:
@@ -195,16 +196,17 @@ class SelfPlayManager:
 
         # 以当前玩家视角获取reward，胜1负-1平0
         for i in range(len(samples)):
-            state, pi, q, p = samples[i]
+            # state, pi, q, p = samples[i]
+            state, pi, p = samples[i]
             z = -1.0 if env.winner == 1 - p else 1.0 if env.winner == p else 0.0
             # 奖励折扣，鼓励短赢和长输
             # gamma = 0.99
             # z = z * np.power(gamma, steps)
             # q与z加权使用
-            alpha = 0.5
-            v = alpha * z + (1 - alpha) * q
+            # alpha = 0.5
+            # v = alpha * z + (1 - alpha) * q
 
-            samples[i] = state, pi, v
+            samples[i] = state, pi, z
 
         return samples, env.winner
 

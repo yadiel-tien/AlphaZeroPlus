@@ -86,7 +86,7 @@ CONFIG: AppConfig = {
         'img_path': './graphics/chess/board.jpeg',
         'augment_times': 2,
         'max_iters': 500,
-        'buffer_size': 500_000,
+        'buffer_size': 300_000,
         'avg_game_steps': 80,
         'selfplay': {
             'tau_decay_rate': 0.98,
@@ -151,7 +151,7 @@ CONFIG: AppConfig = {
     'best_index_name': 'best_index.pkl',
     'ema_name': 'ema.pkl',
     'rates_dir': './rates/',
-    'training_steps_per_sample': 20,
+    'training_steps_per_sample': 30,
     'win_threshold': 0.52,
     'game_name': 'ChineseChess'
 }

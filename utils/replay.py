@@ -67,7 +67,7 @@ class ReplayBuffer:
             pickle.dump(data, f, protocol=4)  # type: ignore
 
     def load(self, env_name: EnvName = game_name) -> None:
-        """加载buffer，支持按num增量添加，优化内存使用"""
+        """加载buffer，支持修改容量"""
         path = os.path.join(CONFIG['data_dir'], env_name, CONFIG['buffer_name'])
         if not os.path.exists(path):
             print(f"Buffer not found at '{path}', current length: {self.size}")
@@ -76,13 +76,26 @@ class ReplayBuffer:
             data = pickle.load(f)
             if data['game'] != self.game:
                 raise ValueError('Game mismatch! Replay buffer loading Failed!')
-            self.size = data['size']
-            self.pointer = data['pointer']
-            self.state_buffer[:self.size] = data['states'][:self.size]
-            self.policy_buffer[:self.size] = data['pis'][:self.size]
-            self.value_buffer[:self.size] = data['values'][:self.size]
 
-            print(f"Replay buffer loaded successfully. Current length: {self.size}")
+            count = min(data['size'], self.capacity)
+            src_capacity = data['states'].shape[0]
+            pointer = data['pointer']
+            if data['size'] < src_capacity:  # 尚未存满
+                indices = np.arange(data['size'] - count, data['size'])
+            else:
+                # 提取逻辑上的最后 count 条数据。
+                # 示例：容量10，当前指针2 (最新数据在1,0,9,8...)，需要取5条。
+                # 1. 逻辑起点：pointer(2) - count(5) = -3
+                # 2. 生成序列：[-3, -2, -1, 0, 1]
+                # 3. 对10取模：[7, 8, 9, 0, 1] -> 正确对应了环形存储的物理索引
+                indices = (np.arange(count) + (pointer - count)) % src_capacity
+            self.size = count
+            self.pointer = count % self.capacity
+
+            self.state_buffer[:count] = data['states'][indices]
+            self.policy_buffer[:count] = data['pis'][indices]
+            self.value_buffer[:count] = data['values'][indices]
+            print(f"Replay buffer loaded successfully. Current length: {self.size},Capacity: {self.capacity}")
 
     def clear(self) -> None:
         self.size = 0
