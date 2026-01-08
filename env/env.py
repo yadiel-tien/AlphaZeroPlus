@@ -24,6 +24,7 @@ class BaseEnv(gym.Env, ABC):
         self.winner: int = 2  # 0,1代表获胜玩家，-1代表平局，2代表未决胜负
         self.terminated: bool = False
         self.truncated: bool = False
+        self.steps: int = 0
 
     @classmethod
     @abstractmethod
@@ -64,11 +65,14 @@ class BaseEnv(gym.Env, ABC):
 
         index = 0
         while True:
+            player = players[index]
             if not silent:
-                print(f'-----player{index + 1} {players[index].description}-----')
-            players[index].update_state(self.state, self.last_action, self.player_to_move)
-            action = players[index].pending_action
+                print(f'-----player{index + 1} {player.description}-----')
+            player.update_state(self.state, self.last_action, self.player_to_move)
+            action = player.pending_action
             _, reward, terminated, truncated, _ = self.step(action)
+            if hasattr(player, 'win_rate'):
+                print(f'win rate:{player.win_rate:.2%}')
             self.describe_last_move()
             if not silent:
                 self.render()

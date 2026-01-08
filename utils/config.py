@@ -89,11 +89,11 @@ CONFIG: AppConfig = {
         'buffer_size': 300_000,
         'avg_game_steps': 80,
         'selfplay': {
-            'tau_decay_rate': 0.98,
-            'exploration_steps': 50
+            'tau_decay_rate': 0.99,
+            'exploration_steps': 30
         },
         'evaluation': {
-            'tau_decay_rate': 0.8,
+            'tau_decay_rate': 0.9,
             'exploration_steps': 10
         },
         'default_net': {

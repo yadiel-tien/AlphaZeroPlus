@@ -2,12 +2,13 @@ from utils.functions import register_sigint
 from utils.config import game_name
 import time
 from inference.train_server import TrainServer
-from network.functions import read_best_index, save_best_index
+from network.functions import read_best_index, read_latest_index
 
 
 def main():
     # 启动推理服务
 
+    # model_idx = read_latest_index()
     model_idx = read_best_index()
     server = TrainServer(model_idx, game_name, 200)
     register_sigint(server.shutdown)

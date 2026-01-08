@@ -106,7 +106,7 @@ class ChineseChess(BaseEnv):
                     return GameResult.LOSE
 
         # 100步未吃子判和
-        if state[-1, 0, 0] >= 30:
+        if state[-1, 0, 0] >= 50:
             return GameResult.DRAW
 
         # 双方都无进攻棋子判和,有则游戏继续
@@ -137,7 +137,9 @@ class ChineseChess(BaseEnv):
 
         # 更改玩家
         self.player_to_move = 1 - self.player_to_move
+
         self.last_action = action
+        self.steps += 1
 
         return self.state, reward, self.terminated, self.truncated, {}
 

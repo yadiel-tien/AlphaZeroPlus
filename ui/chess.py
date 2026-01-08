@@ -36,7 +36,8 @@ class ChineseChessUI(GameUI):
     @property
     def human_perspective_state(self) -> NDArray:
         """尽量保持人类玩家在屏幕下方"""
-        return np.flipud(np.fliplr(self.env.state)) if self.is_view_flipped else self.env.state
+        # state形状C,H,W，对H和W进行旋转。
+        return np.flip(self.env.state, axis=(1, 2)) if self.is_view_flipped else self.env.state
 
     def human_perspective_pos(self, grid: tuple[int, int]) -> tuple[int, int]:
         """根据人类视角变换点"""

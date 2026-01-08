@@ -9,7 +9,7 @@ from tqdm import tqdm
 from env.functions import get_class
 from inference.functions import get_checkpoint_path
 from utils.logger import get_logger
-from utils.state_buffer import StateBuffer
+from utils.npz_loader import NPZLoader
 from utils.replay import ReplayBuffer
 from utils.config import game_name, settings, CONFIG
 from mcts.deepMcts import NeuronMCTS
@@ -28,8 +28,7 @@ class SelfPlayManager:
         self.env_class = get_class(game_name)
         self.best_index = read_best_index()
         self.pool = ThreadPoolExecutor(self.n_workers)
-        # self.midgame_buffer = StateBuffer(2000, 'midgame')
-        # self.midgame_buffer.load()
+        self.opening_buffer = NPZLoader("env/chess_step10.npz")
         self.debug_logger = get_logger('debug')
 
     def run(self, n_games: int) -> None:
@@ -123,30 +122,19 @@ class SelfPlayManager:
         :return [(state,pi_move,q),...],winner.winner0,1代表获胜玩家，-1代表平局"""
 
         env = self.env_class()
-        env.reset()
-        # 一定概率从残局开始
-        start_from_beginning = True
-        # 随机开局
-        # if random.random() < 0.8 and len(self.midgame_buffer) > 50:
-        #     start_from_beginning = False
-        #     state = self.midgame_buffer.sample()
-        #     # 随机双方阵营
-        #     if random.random() < 0.5:
-        #         state = state[:, :, [1, 0]]
-        #     env.state = state
+        # 70%概率选择开局库开局，增加多样性
+        if random.random() < 0.7:
+            env.state, env.last_action, env.steps, = self.opening_buffer.sample()
+            env.player_to_move = env.steps % 2
 
         mcts = NeuronMCTS.make_selfplay_mcts(state=env.state,
                                              env_class=self.env_class,
                                              last_action=env.last_action,
                                              player_to_move=env.player_to_move)
-        steps = 0
         samples = []
         exploration_steps = settings['selfplay']['exploration_steps']
         tau_decay_rate = settings['selfplay']['tau_decay_rate']
         while not env.terminated and not env.truncated:
-            # if steps == settings['avg_game_steps'] // 2 and start_from_beginning and (0.4 < mcts.root.win_rate < 0.6):
-            #     self.midgame_buffer.append(env.state)
-
             mcts.run(n_simulations)  # 模拟
 
             # 采集原始概率分布。象棋需要交换红黑双方位置对应的概率分布
@@ -156,13 +144,12 @@ class SelfPlayManager:
             # 象棋表示state和神经网络state不一样，需要转换。五子棋也进行了接口匹配
             state = env.convert_to_network(env.state, env.player_to_move)
             # q代表对上个玩家的回报，-q代表当前玩家的回报
-            # q = mcts.root.w / mcts.root.n
-            # samples.append((state, pi_target, -q, env.player_to_move))
-            samples.append((state, pi_target,env.player_to_move))
+            q = mcts.root.w / mcts.root.n
+            samples.append((state, pi_target, -q, env.player_to_move))
 
             # 前期高温，后期低温。根据mcts模拟的概率分布进行落子
-            if start_from_beginning and steps < exploration_steps:
-                tau = np.power(tau_decay_rate, steps)
+            if env.steps < exploration_steps:
+                tau = np.power(tau_decay_rate, env.steps)
             else:
                 tau = 0.1
             pi = mcts.get_pi(tau)  # 获取mcts的概率分布pi
@@ -170,8 +157,6 @@ class SelfPlayManager:
             env.step(action)  # 执行落子
             # env.render()
             mcts.apply_action(action)  # mcts也要根据action进行对应裁剪
-
-            steps += 1
 
             # 收到停止信号，截断游戏
             if stop_signal.is_set():
@@ -183,30 +168,29 @@ class SelfPlayManager:
         if env.truncated:
             return [], env.winner
         env.render()
-        print(f'winner: {env.winner},steps: {steps}')
+        print(f'winner: {env.winner},steps: {env.steps}')
 
         # 平局或着截断数据大部分丢弃
         # if env.winner in (-1, 2) and random.random() < 0.5:
         #     return [], env.winner
 
-        if steps < 15:
-            keep_prob = (steps / 15) ** 2
+        if env.steps < 15:
+            keep_prob = (env.steps / 15) ** 2
             if random.random() > keep_prob:
                 return [], 2
 
         # 以当前玩家视角获取reward，胜1负-1平0
         for i in range(len(samples)):
-            # state, pi, q, p = samples[i]
-            state, pi, p = samples[i]
+            state, pi, q, p = samples[i]
             z = -1.0 if env.winner == 1 - p else 1.0 if env.winner == p else 0.0
             # 奖励折扣，鼓励短赢和长输
             # gamma = 0.99
             # z = z * np.power(gamma, steps)
             # q与z加权使用
-            # alpha = 0.5
-            # v = alpha * z + (1 - alpha) * q
+            alpha = 0.5
+            v = alpha * z + (1 - alpha) * q
 
-            samples[i] = state, pi, z
+            samples[i] = state, pi, v
 
         return samples, env.winner
 
@@ -264,6 +248,10 @@ class SelfPlayManager:
         """iteration对战最佳模型，随机先手顺序。
         :return 0新模型胜，1老模型胜，-1平"""
         env = self.env_class()
+        # 70%概率采用开局库开局
+        if random.random() < 0.7:
+            env.state, env.last_action, env.steps, = self.opening_buffer.sample()
+            env.player_to_move = env.steps % 2
         # 随机先后手
         model_list = [iteration, self.best_index] if random.random() < 0.5 else [self.best_index, iteration]
         competitors = [NeuronMCTS.make_socket_mcts(
@@ -273,9 +261,9 @@ class SelfPlayManager:
             player_to_move=env.player_to_move,
             model_id=index
         ) for index in model_list]
+
         # 随机模拟测试
         n_simulations = 300
-        steps = 0
         exploration_steps = settings['evaluation']['exploration_steps']
         tau_decay_rate = settings['evaluation']['tau_decay_rate']
 
@@ -283,8 +271,8 @@ class SelfPlayManager:
             mcts = competitors[env.player_to_move]
             mcts.run(n_simulations)
             # 前几步赋予随机性，避免棋局雷同
-            if steps < exploration_steps:
-                tau = np.power(tau_decay_rate, steps)
+            if env.steps < exploration_steps:
+                tau = np.power(tau_decay_rate, env.steps)
                 pi = mcts.get_pi(tau)
                 action = np.random.choice(len(pi), p=pi)
             else:
@@ -295,21 +283,20 @@ class SelfPlayManager:
                 mcts.apply_action(action)
             if stop_signal.is_set():
                 env.truncated = True
-            steps += 1
         for mcts in competitors:
             mcts.shutdown()
         if env.winner in (-1, 2):  # 和棋或被提前终止
-            return env.winner, steps
+            return env.winner, env.steps
 
         winner = model_list[env.winner]
 
         env.render()
-        print(f'winner: {env.winner},tester win:{winner == iteration},steps: {steps}')
+        print(f'winner: {env.winner},tester win:{winner == iteration},steps: {env.steps}')
 
         if winner == iteration:
-            return 0, steps
+            return 0, env.steps
         else:
-            return 1, steps
+            return 1, env.steps
 
     def shutdown(self):
         self.pool.shutdown()

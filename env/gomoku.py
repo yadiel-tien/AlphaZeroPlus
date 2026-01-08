@@ -71,7 +71,9 @@ class Gomoku(BaseEnv):
 
         # 更改玩家
         self.player_to_move = 1 - self.player_to_move
+
         self.last_action = action
+        self.steps += 1
 
         return self.state, reward, terminated, self.truncated, {}
 

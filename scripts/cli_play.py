@@ -1,13 +1,13 @@
 from env.functions import get_class
-from network.functions import read_latest_index
+from network.functions import read_best_index
 from player.human import Human
 from player.ai_server import AIServer
 from utils.config import game_name
 
 if __name__ == "__main__":
-    latest_model = read_latest_index()
+    best_model = read_best_index()
     env = get_class(game_name)()
-    with AIServer(game_name, latest_model, n_simulation=500) as ai, AIServer(game_name, 520,n_simulation=500) as ai2:
+    with AIServer(game_name, best_model, n_simulation=500) as ai:
         # result = env.run((ai2, ai))
         result = env.run((Human(game_name), ai))
     env.render()
