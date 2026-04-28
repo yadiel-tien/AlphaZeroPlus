@@ -1,8 +1,8 @@
-from env.functions import get_class
-from network.functions import read_best_index
-from player.human import Human
-from player.ai_server import AIServer
-from utils.config import game_name
+from core.env.functions import get_class
+from core.network.functions import read_best_index
+from core.player.human import Human
+from core.player.ai_server import AIServer
+from core.utils.config import game_name
 
 if __name__ == "__main__":
     best_model = read_best_index()

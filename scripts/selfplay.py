@@ -1,5 +1,5 @@
-from utils.functions import register_sigint
-from train.selfplay import SelfPlayManager
+from core.utils.functions import register_sigint
+from services.train.selfplay import SelfPlayManager
 
 
 def main():

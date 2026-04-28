@@ -1,6 +1,6 @@
-from utils.functions import register_sigint
+from core.utils.functions import register_sigint
 
-from inference.hub import ServerHub
+from services.inference.hub import ServerHub
 
 
 def main():

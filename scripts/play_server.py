@@ -9,7 +9,7 @@ import traceback
 import numpy as np
 from flask import Flask, request, jsonify
 
-from player.ai_server import AIServer
+from core.player.ai_server import AIServer
 
 app = Flask(__name__)
 ai_players: dict[str, AIServer] = {}

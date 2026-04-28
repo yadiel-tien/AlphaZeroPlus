@@ -2,9 +2,9 @@ import socket
 import traceback
 import time
 
-from env.gomoku import Gomoku
-from network.functions import read_best_index
-from player.ai_server import AIServer
+from core.env.gomoku import Gomoku
+from core.network.functions import read_best_index
+from core.player.ai_server import AIServer
 
 
 class GomokuSession:

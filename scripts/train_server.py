@@ -1,8 +1,8 @@
-from utils.functions import register_sigint
-from utils.config import game_name
+from core.utils.functions import register_sigint
+from core.utils.config import game_name
 import time
-from inference.train_server import TrainServer
-from network.functions import read_best_index, read_latest_index, save_best_index
+from services.inference.train_server import TrainServer
+from core.network.functions import read_best_index, read_latest_index, save_best_index
 
 
 def main():

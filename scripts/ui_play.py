@@ -1,13 +1,13 @@
 import sys
 
-from utils.types import EnvName
+from core.utils.types import EnvName
 import pygame
 
-from ui.chess import ChineseChessUI
-from ui.gomoku import GomokuUI
-from utils.config import settings, CONFIG
-from player.human import Human
-from player.ai_client import AIClient
+from apps.ui.chess import ChineseChessUI
+from apps.ui.gomoku import GomokuUI
+from core.utils.config import settings, CONFIG
+from core.player.human import Human
+from core.player.ai_client import AIClient
 
 game_name: EnvName = CONFIG['game_name']
 

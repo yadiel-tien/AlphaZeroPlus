@@ -1,7 +1,7 @@
 import threading
 
-from utils.arena import Arena
-from utils.config import game_name
+from core.utils.arena import Arena
+from core.utils.config import game_name
 
 if __name__ == '__main__':
     arena = Arena(game_name)
