@@ -28,8 +28,8 @@ class SelfPlayManager:
         self.env_class = get_class(game_name)
         self.best_index = read_best_index()
         self.pool = ThreadPoolExecutor(self.n_workers)
-        self.opening_buffer = NPZLoader("env/chess_step10.npz")
-        self.endgame_buffer = NPZLoader("env/chess_step50.npz")
+        self.opening_buffer = NPZLoader("core/env/chess_step10.npz") if game_name == 'ChineseChess' else None
+        self.endgame_buffer = NPZLoader("core/env/chess_step50.npz") if game_name == 'ChineseChess' else None
         self.debug_logger = get_logger('debug')
 
     def run(self, n_games: int) -> None:
@@ -125,10 +125,10 @@ class SelfPlayManager:
         env = self.env_class()
         # 70%概率选择开局库开局，增加多样性
         p=random.random()
-        if p < 0.3:
+        if p < 0.3 and self.opening_buffer is not None:
             env.state, env.last_action, env.steps, = self.opening_buffer.sample()
             env.player_to_move = env.steps % 2
-        elif p<0.7:
+        elif p < 0.7 and self.endgame_buffer is not None:
             env.state, env.last_action, env.steps, = self.endgame_buffer.sample()
             env.player_to_move = env.steps % 2
 
@@ -254,7 +254,7 @@ class SelfPlayManager:
         :return 0新模型胜，1老模型胜，-1平"""
         env = self.env_class()
         # 70%概率采用开局库开局
-        if random.random() < 0.7:
+        if self.opening_buffer is not None and random.random() < 0.7:
             env.state, env.last_action, env.steps, = self.opening_buffer.sample()
             env.player_to_move = env.steps % 2
         # 随机先后手
