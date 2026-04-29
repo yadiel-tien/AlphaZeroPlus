@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import TypedDict, Literal
 
 from core.utils.types import EnvName
@@ -12,7 +13,13 @@ class ColorTheme(TypedDict):
     black: list[str]
 
 
-cwd = '/home/bigger/projects/five_in_a_row'
+ROOT_DIR = Path(__file__).parent.parent.parent
+
+# 确保必要的目录存在
+(ROOT_DIR / "data").mkdir(exist_ok=True)
+(ROOT_DIR / "logs").mkdir(exist_ok=True)
+(ROOT_DIR / "services/inference/socks").mkdir(parents=True, exist_ok=True)
+
 color_key = Literal['blue', 'green', 'red', 'orange', 'grey', 'black']
 
 
@@ -138,14 +145,14 @@ CONFIG: AppConfig = {
         },
     },
 
-    'data_dir': './data/',
+    'data_dir': str(ROOT_DIR / 'data'),
     'dirichlet': 0.2,
     'base_url': 'http://192.168.0.126:5000/',
     'device': 'cuda:0',
-    'socket_path_prefix': './services/inference/socks/',
-    'hub_socket_path': './services/inference/socks/hub.sock',
-    'train_socket_path': cwd + '/services/inference/socks/train.sock',
-    'log_dir': './logs/',
+    'socket_path_prefix': str(ROOT_DIR / 'services/inference/socks/'),
+    'hub_socket_path': str(ROOT_DIR / 'services/inference/socks/hub.sock'),
+    'train_socket_path': str(ROOT_DIR / 'services/inference/socks/train.sock'),
+    'log_dir': str(ROOT_DIR / 'logs'),
     'buffer_name': 'buffer.pkl',
     'best_index_name': 'best_index.pkl',
     'ema_name': 'ema.pkl',
