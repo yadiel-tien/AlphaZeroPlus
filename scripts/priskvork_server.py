@@ -56,7 +56,7 @@ class GomokuSession:
         elif cmd == 'INFO':
             return None
         elif cmd == 'ABOUT':
-            return 'name="AlphaZeroPlus", version="1.0", country="CN"'
+            return 'name="ZenZero", version="1.0", country="CN"'
         elif cmd == 'SWAP2BOARD':
             return 'Error Swap2 rule was not supported'
         elif cmd == 'RESTART':

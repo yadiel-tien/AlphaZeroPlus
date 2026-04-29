@@ -125,10 +125,12 @@ class ChineseChessUI(GameUI):
     def draw(self) -> None:
         self.screen.fill('#DDDDBB')
         self.screen.blit(self.image, self.rect)
+        self.draw_logo()  # 绘制品牌 Logo
         self.draw_last_mark()
         self.draw_pieces()
         self.draw_select_piece()
         self.draw_dot_mark()
+        self.back_btn.draw()
         if self.status == 'finished':
             self.draw_victory_badge()
             self.start_btn.draw()
@@ -137,6 +139,9 @@ class ChineseChessUI(GameUI):
             self.draw_new_game_title()
             self.start_btn.draw()
             self.reverse_player_btn.draw()
+        elif self.status == 'confirm_back':
+            self.draw_player()
+            self.draw_confirm_dialog()
         else:
             self.draw_player()
             self.resign_btn.draw()

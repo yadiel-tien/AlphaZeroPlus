@@ -10,6 +10,7 @@ import numpy as np
 from flask import Flask, request, jsonify
 
 from core.player.ai_server import AIServer
+from core.network.functions import list_all_indices, read_best_index
 
 app = Flask(__name__)
 ai_players: dict[str, AIServer] = {}
@@ -48,6 +49,21 @@ def require_json(f: Callable) -> Callable:
         return f(data, *args, **kwargs)
 
     return wrapper
+
+
+@app.route('/models', methods=['POST'])
+@require_json
+def get_models(data: Any) -> Any:
+    try:
+        env_name = data['env_name']
+        print(f"Requesting models for: {env_name}")
+        indices = list_all_indices(env_name)
+        best_index = read_best_index(env_name)
+        print(f"Found indices: {indices}, best: {best_index}")
+        return jsonify({'indices': indices, 'best_index': best_index})
+    except Exception as e:
+        traceback.print_exc() # 打印详细错误到终端
+        return jsonify({"error": f'Failed to get models: {str(e)}', "traceback": traceback.format_exc()}), 500
 
 
 @app.route('/setup', methods=['POST'])

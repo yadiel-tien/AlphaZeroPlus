@@ -1,4 +1,4 @@
-# AlphaZero 在中国象棋与五子棋的实现 (AlphaZero for Chinese Chess and Gomoku)
+# ZenZero - 中国象棋与五子棋 AI (ZenZero - Chinese Chess & Gomoku AI)
 
 这是一个基于AlphaZero思想实现的通用棋类AI框架，目前已支持中国象棋（Chinese Chess）和五子棋（Gomoku）。项目采用了高度优化的架构，旨在充分利用多核CPU和GPU资源，实现高性能的自我对弈训练和对战。
 
@@ -17,16 +17,12 @@
 ## ⚙️ 项目结构 (Project Structure)
 
 ```
-five_in_a_row/
-├── env/                # 游戏环境定义 (chess.py, gomoku.py, chess_cython.pyx)
-├── inference/          # 推理服务器相关 (client.py, engine.py, hub.py, server.py)
-├── mcts/               # MCTS 算法实现 (deepMcts.py)
-├── network/            # 神经网络模型定义 (network.py)
-├── player/             # 玩家抽象 (human.py, ai_client.py, ai_server.py)
-├── scripts/            # 可执行的主脚本
-├── train/              # 训练与自我对弈管理器 (selfplay.py)
-├── ui/                 # Pygame UI 实现
-├── utils/              # 通用工具 (config.py, replay.py, elo.py)
+ZenZero/
+├── core/               # 核心逻辑 (env, mcts, network, player, utils)
+├── services/           # 后端服务 (inference, train)
+├── apps/               # 应用层 (ui, assets)
+├── scripts/            # 启动脚本
+├── logs/               # 日志文件
 └── data/               # 存放模型、棋谱等数据 (需手动创建)
 ```
 
@@ -41,16 +37,21 @@ five_in_a_row/
     ```
 
 2.  **创建`nogil`计算环境 (用于训练和推理):**
-    * 请确保您已经从源代码编译好了`free-threading` (nogil) 版本的Python（例如 Python 3.14）。
-    * 创建虚拟环境：
+    * 推荐使用 [uv](https://github.com/astral-sh/uv) 快速安装并管理 free-threading 版本的 Python。
+    * 安装 Python 3.14t 并创建虚拟环境：
         ```bash
-        /path/to/your/nogil_python -m venv nogil_venv
+        # 安装 3.14t (free-threading)
+        uv python install 3.14t
+        # 创建虚拟环境
+        uv venv --python 3.14t nogil_venv
+        # 激活环境
         source nogil_venv/bin/activate
         ```
     * 安装依赖：
         ```bash
-        pip install --upgrade pip
-        pip install -r requirements.txt  # 建议您创建一个requirements.txt文件
+        uv pip install torch numpy 
+        # 或者如果有 requirements.txt
+        # uv pip install -r requirements.txt
         ```
 
 3.  **创建标准UI环境 (用于图形界面):**

@@ -35,9 +35,11 @@ class GomokuUI(GameUI):
     def draw(self):
         self.screen.fill('#DDDDBB')
         self.screen.blit(self.image, self.rect)
+        self.draw_logo()  # 绘制品牌 Logo
         self.draw_boundary()
         self.draw_pieces()
         self.draw_last_mark()
+        self.back_btn.draw()
 
         if self.status == 'finished':
             self.draw_step_mark()
@@ -50,6 +52,9 @@ class GomokuUI(GameUI):
             self.draw_new_game_title()
             self.start_btn.draw()
             self.reverse_player_btn.draw()
+        elif self.status == 'confirm_back':
+            self.draw_player()
+            self.draw_confirm_dialog()
         else:
             self.draw_player()
             self.draw_cursor()

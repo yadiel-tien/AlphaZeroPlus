@@ -24,17 +24,60 @@ class GameUI(ABC):
         self.win_sound = pygame.mixer.Sound('./apps/assets/sound/win.mp3')
         pygame.mixer.music.load('./apps/assets/sound/bgm.mp3')
         pygame.mixer.music.set_volume(0.5)
-        self.start_btn = Button("Start", self.start, (200, 680), color='green')
-        self.reverse_player_btn = Button(f'First:{players[0].description}', self.reverse_player, pos=(200, 740),
-                                         color='grey')
-        self.resign_btn = Button('Resign', self.resign, (20, 20), (60, 30), color='red')
+        self.start_btn = Button("Start", self.start, (110, 710), (180, 50), color='green')
+        self.reverse_player_btn = Button(f'First: {players[0].description}', self.reverse_player, pos=(310, 710),
+                                         size=(180, 50), color='grey')
+        self.resign_btn = Button('Resign', self.resign, (520, 20), (60, 30), color='red')
+        self.back_btn = Button('Back', self.back, (20, 20), (60, 30), color='black')
+        self.yes_btn = Button('Confirm', self._do_return, (110, 420), (180, 50), color='red')
+        self.no_btn = Button('Cancel', self.continue_game, (310, 420), (180, 50), color='green')
         self.timers = {0: Timer(limit=100000, func=self.time_up), 1: Timer(limit=100000, func=self.time_up)}
         self.history = []
         self.screen = pygame.display.get_surface()
+        self.font_path = self._get_best_font()
+        
+        # 设置窗口标题为 ZenZero - 游戏名
+        game_name = "Chess" if isinstance(env, ChineseChess) else "Gomoku"
+        pygame.display.set_caption(f"ZenZero - {game_name}")
+        
         self.image = pygame.image.load(img_path)
         self.rect = self.image.get_rect(center=self.screen.get_rect().center)
         self.cursor_grid: tuple[int, int] | None = None
         self.settings = {}
+
+    def _get_best_font(self):
+        for fn in ['stkaiti', 'kaiti', 'simsun', 'arial']:
+            font_path = pygame.font.match_font(fn)
+            if font_path:
+                return font_path
+        return None
+
+    def draw_logo(self) -> None:
+        """绘制 ZenZero 品牌 Logo (仅在初始选择状态)"""
+        if self.status in ['playing', 'finished']:
+            return
+            
+        # 1. 标题 (书法感 + 阴影)
+        font_big = pygame.font.Font(self.font_path, 42)
+        title_text = "ZenZero"
+        shadow_color = (200, 190, 170)
+        main_color = (40, 40, 40)
+        
+        # 绘制浅色阴影
+        shadow_surf = font_big.render(title_text, True, shadow_color)
+        self.screen.blit(shadow_surf, (self.rect.centerx - shadow_surf.get_width()//2 + 2, 10))
+        # 绘制主标题
+        title_surf = font_big.render(title_text, True, main_color)
+        self.screen.blit(title_surf, (self.rect.centerx - title_surf.get_width()//2, 8))
+        
+        # 2. 装饰性红印章 (缩小版)
+        seal_x, seal_y = self.rect.centerx + 95, 8
+        pygame.draw.rect(self.screen, (150, 20, 20), (seal_x, seal_y, 28, 28), border_radius=4)
+        pygame.draw.rect(self.screen, (200, 160, 40), (seal_x + 3, seal_y + 3, 22, 22), width=1, border_radius=3)
+        
+        font_seal = pygame.font.Font(self.font_path, 14)
+        seal_txt = font_seal.render("AI", True, (250, 240, 210))
+        self.screen.blit(seal_txt, (seal_x + 6, seal_y + 5))
 
     @property
     def is_view_flipped(self) -> bool:
@@ -42,6 +85,12 @@ class GameUI(ABC):
         # return isinstance(self.players[1], Human) and not isinstance(self.players[0], Human)
 
     def handle_input(self, event: pygame.event.Event) -> None:
+        self.back_btn.handle_input(event)
+        if self.status == 'confirm_back':
+            self.yes_btn.handle_input(event)
+            self.no_btn.handle_input(event)
+            return
+
         if self.status == 'playing':
             player = self.players[self.env.player_to_move]
 
@@ -91,6 +140,35 @@ class GameUI(ABC):
         """投降"""
         self.env.set_winner(1 - self.env.player_to_move)
         self.set_win_status()
+
+    def back(self) -> None:
+        """返回游戏选择"""
+        if self.status == 'playing':
+            self.status = 'confirm_back'
+        else:
+            self._do_return()
+
+    def _do_return(self) -> None:
+        pygame.mixer.music.stop()
+        self.status = 'returning'
+
+    def continue_game(self) -> None:
+        self.status = 'playing'
+
+    def draw_confirm_dialog(self) -> None:
+        # 半透明遮罩
+        s = pygame.Surface(self.screen.get_size(), pygame.SRCALPHA)
+        s.fill((0, 0, 0, 180))
+        self.screen.blit(s, (0, 0))
+        
+        # 提示文字
+        font = pygame.font.SysFont('arial', 40, bold=True)
+        text = font.render("Quit current game?", True, (255, 255, 255))
+        rect = text.get_rect(center=(self.rect.centerx, 350))
+        self.screen.blit(text, rect)
+        
+        self.yes_btn.draw()
+        self.no_btn.draw()
 
     def switch_side(self):
         current_player = self.env.player_to_move
@@ -144,12 +222,7 @@ class GameUI(ABC):
         self.screen.blit(text, rect.topleft)
 
     def draw_new_game_title(self):
-        font = pygame.font.Font(None, 70)
-        text = font.render('New Game', True, 'orange')
-        x = self.rect.centerx
-        y = 60
-        rect = text.get_rect(center=(x, y))
-        self.screen.blit(text, rect.topleft)
+        pass  # 现在由 draw_logo 统一处理品牌显示
 
     def draw_player(self):
         self.timers[self.env.player_to_move].update()

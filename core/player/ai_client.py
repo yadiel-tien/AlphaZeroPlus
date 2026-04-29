@@ -158,5 +158,18 @@ class AIClient(Player):
         super().reset()
         self.status = ClientStatus.UNINITIATED
 
+    @staticmethod
+    def get_available_models(env_name: str) -> dict[str, Any]:
+        """从服务器获取可用模型列表"""
+        url = CONFIG['base_url'] + 'models'
+        payload = {'env_name': env_name}
+        try:
+            response = requests.post(url, json=payload, timeout=5)
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            print(f"Failed to fetch models from server: {e}")
+            return {'indices': [], 'best_index': -1}
+
     def shutdown(self) -> None:
         self.alive = False

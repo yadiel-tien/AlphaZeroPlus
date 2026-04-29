@@ -17,15 +17,23 @@ def read_best_index(env_name: EnvName = game_name) -> int:
 
 def read_latest_index(env_name: EnvName = game_name) -> int:
     """读取保存的最新模型index，找不到的话返回-1"""
-    patten = os.path.join(CONFIG['data_dir'], env_name, '*.pt')
-    model_files = glob.glob(patten)
-    if model_files:
-        return max(
-            int(f.split("_")[-1].split(".")[0])
-            for f in model_files
-        )
-    else:
-        return -1
+    indices = list_all_indices(env_name)
+    return max(indices) if indices else -1
+
+
+def list_all_indices(env_name: EnvName = game_name) -> list[int]:
+    """列出所有保存的模型index"""
+    pattern = os.path.join(CONFIG['data_dir'], env_name, '*.pt')
+    model_files = glob.glob(pattern)
+    indices = []
+    for f in model_files:
+        try:
+            # f like "data/Gomoku/model_12.pt"
+            index = int(os.path.basename(f).split("_")[-1].split(".")[0])
+            indices.append(index)
+        except (ValueError, IndexError):
+            continue
+    return sorted(indices)
 
 
 def save_best_index(best_index: int, env_name: EnvName = game_name) -> None:
