@@ -7,12 +7,14 @@ from core.utils.types import EnvName
 
 
 def read_best_index(env_name: EnvName = game_name) -> int:
-    """读取保存的最佳模型index，找不到的话返回-1"""
+    """读取保存的最佳模型index，找不到的话返回最新版本，仍找不到返回-1"""
     path = os.path.join(CONFIG['data_dir'], env_name, CONFIG['best_index_name'])
     if os.path.exists(path):
         with open(path, "rb") as f:
             return pickle.load(f)
-    return -1
+    
+    # 自动降级：如果没有best_index.pkl，则寻找最大的checkpoint号
+    return read_latest_index(env_name)
 
 
 def read_latest_index(env_name: EnvName = game_name) -> int:
@@ -22,14 +24,15 @@ def read_latest_index(env_name: EnvName = game_name) -> int:
 
 
 def list_all_indices(env_name: EnvName = game_name) -> list[int]:
-    """列出所有保存的模型index"""
+    """列出所有保存的模型index，支持 model_x.pt 和 checkpoint_x.pt"""
     pattern = os.path.join(CONFIG['data_dir'], env_name, '*.pt')
     model_files = glob.glob(pattern)
     indices = []
     for f in model_files:
         try:
-            # f like "data/Gomoku/model_12.pt"
-            index = int(os.path.basename(f).split("_")[-1].split(".")[0])
+            # 支持 "model_12.pt" 或 "checkpoint_12.pt"
+            base = os.path.basename(f)
+            index = int(base.replace('.pt', '').split("_")[-1])
             indices.append(index)
         except (ValueError, IndexError):
             continue

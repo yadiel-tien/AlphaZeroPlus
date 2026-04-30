@@ -17,6 +17,8 @@ ROOT_DIR = Path(__file__).parent.parent.parent
 
 # 确保必要的目录存在
 (ROOT_DIR / "data").mkdir(exist_ok=True)
+(ROOT_DIR / "data/ChineseChess").mkdir(exist_ok=True)
+(ROOT_DIR / "data/Gomoku").mkdir(exist_ok=True)
 (ROOT_DIR / "logs").mkdir(exist_ok=True)
 (ROOT_DIR / "services/inference/socks").mkdir(parents=True, exist_ok=True)
 

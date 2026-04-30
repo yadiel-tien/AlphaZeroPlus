@@ -59,7 +59,7 @@ class TrainServer(InferServer):
             self.fit_logger.info(f'Checkpoint {iteration} not found.Starting from raw model.')
 
     def save_checkpoint(self, iteration: int) -> None:
-        """保存存档"""
+        """保存存档 (原子化操作)"""
         # 创建checkpoint
         checkpoint = {
             'total_steps_trained': self.total_steps_trained,
@@ -69,9 +69,17 @@ class TrainServer(InferServer):
             'config': self.fit_model.config
         }
 
-        # 保存新模型参数
+        # 先保存到临时文件，再重命名 (防止保存过程中断导致文件损坏)
         path = get_checkpoint_path(self.env_name, iteration)
-        torch.save(checkpoint, path)
+        tmp_path = path + ".tmp"
+        try:
+            torch.save(checkpoint, tmp_path)
+            os.replace(tmp_path, path)
+            self.fit_logger.info(f"Saved checkpoint to {path}")
+        except Exception as e:
+            self.fit_logger.error(f"Failed to save checkpoint: {e}")
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
 
     @property
     def socket_path(self) -> str:

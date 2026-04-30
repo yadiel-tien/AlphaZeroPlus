@@ -61,11 +61,6 @@ def parse_model_name(model_name: str) -> tuple[str, int]:
         raise RuntimeError(f'invalid env_name: {model_name}')
 
 
-def get_model_path(env_name: str, model_id: int) -> str:
-    """根据env_name和model_id生成model的存储路径"""
-    return os.path.join(CONFIG['data_dir'], env_name, f'model_{model_id}.pt')
-
-
 def get_checkpoint_path(env_name: str, iteration: int) -> str:
     """根据env_name和iteration生成checkpoint的存储路径"""
     return os.path.join(CONFIG['data_dir'], env_name, f'checkpoint_{iteration}.pt')

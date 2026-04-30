@@ -14,6 +14,24 @@
 * **图形化对战界面 (GUI):** 基于 Pygame 实现，支持 Human vs. AI、AI vs. AI 等多种模式。
 * **模块化设计:** 环境、MCTS、网络、播放器、UI 模块清晰分离，易于扩展。
 
+## 📥 预训练权重 (Pre-trained Models)
+
+本项目不直接在仓库中包含大体积模型文件。为了直接开始对战，请按以下步骤配置：
+
+1.  前往 [Releases 页面](https://github.com/yadiel-tien/AlphaGomoku/releases) 下载对应游戏的 `checkpoint_xxx.pt` 文件。
+2.  运行一次程序，系统将自动创建 `data/ChineseChess/` 和 `data/Gomoku/` 目录。
+3.  将下载的 `.pt` 文件放入对应的游戏子目录下即可。
+4.  **注意：** 系统会自动识别编号最大的 `checkpoint` 作为最强模型，您无需手动配置 `best_index.pkl`。
+
+解压或放置后的目录结构示例：
+```text
+data/
+├── ChineseChess/
+│   └── checkpoint_498.pt
+└── Gomoku/
+    └── checkpoint_141.pt
+```
+
 ## ⚙️ 项目结构 (Project Structure)
 
 ```
@@ -26,37 +44,55 @@ ZenZero/
 └── data/               # 存放模型、棋谱等数据 (需手动创建)
 ```
 
+## 🧩 扩展新游戏 (Extending to New Games)
+
+ZenZero 旨在作为一个通用的 AlphaZero 框架。除了内置的象棋和五子棋，您可以轻松添加其他棋类游戏：
+
+### 1. 实现环境 (Environment)
+在 `core/env/` 目录下创建新的环境类，继承自 `BaseEnv`。您需要实现以下核心接口：
+- `get_valid_actions()`: 获取当前合法走法。
+- `step(action)`: 执行动作并返回新状态。
+- `is_terminated()`: 判断比赛是否结束。
+- `convert_to_network_input()`: 将棋盘状态转换为神经网络所需的 Tensor。
+
+### 2. 配置参数 (Configuration)
+在 `core/utils/config.py` 中为新游戏添加配置项（包括 `screen_size`, `grid_size`, `n_res_blocks` 等），并修改全局 `game_name`：
+```python
+CONFIG = {
+    'game_name': 'YourNewGame',  # 在这里切换当前要训练/运行的游戏
+    'YourNewGame': {
+        # 具体的网络结构和游戏参数
+    }
+}
+```
+
+### 3. 实现 UI (可选)
+在 `apps/ui/` 下参考 `chess.py` 或 `gomoku.py` 实现图形化界面。
+
 ## 🛠️ 安装与设定 (Setup & Installation)
 
-建议准备两个 Python 环境：一个用于高性能计算的 `nogil` 环境，一个用于 UI 的标准环境。
+本项目采用**算力分离**架构，建议准备两个独立的 Python 环境：
 
-### 1. 克隆项目
-```bash
-git clone git@github.com:yadiel-tien/AlphaGomoku.git
-cd ZenZero
-```
-
-### 2. 创建 nogil 计算环境 (用于训练和推理)
-推荐使用 [uv](https://github.com/astral-sh/uv) 管理 free-threading 版本的 Python：
-```bash
-# 安装 3.14t (free-threading)
-uv python install 3.14t
-# 创建虚拟环境
-uv venv --python 3.14t nogil_venv
-# 激活环境
-source nogil_venv/bin/activate
-# 安装核心依赖 (示例)
-uv pip install torch numpy requests
-```
-
-### 3. 创建标准 UI 环境 (用于图形界面)
+### 1. 创建标准环境 (用于训练、推理、UI)
+用于运行 PyTorch 训练服务器、推理 Hub 以及图形界面。建议使用 Python 3.10+。
 ```bash
 python3 -m venv standard_venv
 source standard_venv/bin/activate
-pip install pygame requests numpy
+pip install torch numpy requests pygame flask
 ```
 
-### 4. 编译 Cython 模块
+### 2. 创建 nogil 环境 (仅用于高性能自我对弈)
+用于运行大规模并行的 MCTS 搜索。推荐使用 [uv](https://github.com/astral-sh/uv) 安装 free-threading 版本。
+```bash
+# 安装 3.14t 并创建环境
+uv python install 3.14t
+uv venv --python 3.14t nogil_venv
+source nogil_venv/bin/activate
+# 仅需安装基础库 (selfplay 通过 socket 与标准环境的服务器通信)
+uv pip install numpy requests
+```
+
+### 3. 编译 Cython 模块
 必须使用 `nogil` 环境编译以确保线程安全：
 ```bash
 source nogil_venv/bin/activate
@@ -68,14 +104,15 @@ cd ../..
 ## 🎮 使用方法 (Usage)
 
 ### 1. 训练新模型
-需要两个终端，均使用 `nogil_venv` 环境：
-* **终端 1 (服务器):** `python -m scripts.train_server`
-* **终端 2 (自我对弈):** `python -X gil=0 -m scripts.selfplay`
+1. **指定游戏**: 在 `core/utils/config.py` 中修改 `game_name`。
+2. **启动训练**:
+    * **终端 1 (标准环境)**: `python -m scripts.train_server` (负责权重更新与推理)
+    * **终端 2 (nogil 环境)**: `python -X gil=0 -m scripts.selfplay` (负责并行产生数据)
 
 ### 2. 图形化对战 (推荐)
-1. **终端 1 (Hub 服务):** `python -m scripts.infer_hub` (标准环境)
-2. **终端 2 (对战后端):** `python -m scripts.play_server` (标准环境)
-3. **终端 3 (GUI 界面):** `python -m scripts.ui_play` (标准环境)
+1. **终端 1 (标准环境)**: `python -m scripts.play_server` (对战 API 服务，已集成推理调度功能)
+2. **终端 2 (标准环境)**: `python -m scripts.ui_play` (GUI 界面)
+
 
 ### 3. AI 竞技场
 ```bash

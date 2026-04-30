@@ -95,20 +95,21 @@ class LauncherUI:
             data = AIClient.get_available_models(self.selected_game)
             self.model_indices = data.get('indices', [])
             self.best_index = data.get('best_index', -1)
-            if not self.model_indices: self.model_indices = [-1]
         
         # 准备下拉选项 (英文标签)
         options = []
         best_opt_idx = -1
-        for idx in sorted(self.model_indices, reverse=True):
-            if idx == self.best_index:
-                label = f"Strongest AI (v{idx})"
-                best_opt_idx = len(options)
-            elif idx == -1:
-                label = "Raw AI"
-            else:
-                label = f"AI Version {idx}"
-            options.append((label, idx))
+        
+        if self.model_indices:
+            for idx in sorted(self.model_indices, reverse=True):
+                if idx == self.best_index:
+                    label = f"Strongest AI (v{idx})"
+                    best_opt_idx = len(options)
+                elif idx == -1:
+                    label = "Raw AI"
+                else:
+                    label = f"AI Version {idx}"
+                options.append((label, idx))
 
         center_x = self.rect.centerx - 120
         self.buttons = [
@@ -116,13 +117,16 @@ class LauncherUI:
             Button("Start Game", self.confirm_selection, (center_x, 600), color='red')
         ]
         
-        if self.selected_mode == "HvAI":
-            self.dropdowns = [Dropdown(options, (center_x, 300), default_text="Select AI", default_index=best_opt_idx)]
-        else: # AI vs AI
-            self.dropdowns = [
-                Dropdown(options, (center_x, 250), default_text="AI 1 (First)", default_index=best_opt_idx),
-                Dropdown(options, (center_x, 350), default_text="AI 2 (Second)", default_index=best_opt_idx)
-            ]
+        if self.model_indices:
+            if self.selected_mode == "HvAI":
+                self.dropdowns = [Dropdown(options, (center_x, 300), default_text="Select AI", default_index=best_opt_idx)]
+            else: # AI vs AI
+                self.dropdowns = [
+                    Dropdown(options, (center_x, 250), default_text="AI 1 (First)", default_index=best_opt_idx),
+                    Dropdown(options, (center_x, 350), default_text="AI 2 (Second)", default_index=best_opt_idx)
+                ]
+        else:
+            self.dropdowns = []
 
     def confirm_selection(self):
         if self.selected_mode == "HvAI":
@@ -242,3 +246,15 @@ class LauncherUI:
             
         for dd in reversed(self.dropdowns):
             dd.draw()
+
+        # 5. 如果没有找到模型且处于模型选择状态，显示下载提示
+        if self.state == 'SELECT_MODEL' and not self.model_indices:
+            font_tip = pygame.font.Font(self.font_path, 20)
+            tips = [
+                "No AI models found in data/ folder.",
+                "Please download models from GitHub Release",
+                "and put them into data/<GameName>/ directory."
+            ]
+            for i, tip in enumerate(tips):
+                tip_surf = font_tip.render(tip, True, (150, 0, 0))
+                self.screen.blit(tip_surf, (self.rect.centerx - tip_surf.get_width()//2, 300 + i * 30))
