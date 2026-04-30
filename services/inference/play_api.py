@@ -48,7 +48,8 @@ class PlayApiServer:
                 best_index = read_best_index(env_name)
                 return jsonify({'indices': indices, 'best_index': best_index})
             except Exception as e:
-                return jsonify({"error": str(e)}), 500
+                traceback.print_exc()
+                return jsonify({"error": f"{str(e)}\n{traceback.format_exc()}"}), 500
 
         @self.app.route('/setup', methods=['POST'])
         @self._require_json
@@ -63,7 +64,8 @@ class PlayApiServer:
                     self.ai_players[pid] = player
                 return jsonify({'pid': pid, 'model_id': player.model_id})
             except Exception as e:
-                return jsonify({"error": str(e)}), 500
+                traceback.print_exc()
+                return jsonify({"error": f"{str(e)}\n{traceback.format_exc()}"}), 500
 
         @self.app.route('/update', methods=['POST'])
         @self._require_json
@@ -80,7 +82,8 @@ class PlayApiServer:
                 player.update_state(state, data['action'], data['player_to_move'])
                 return jsonify({'win_rate': float(player.win_rate)})
             except Exception as e:
-                return jsonify({"error": str(e)}), 500
+                traceback.print_exc()
+                return jsonify({"error": f"{str(e)}\n{traceback.format_exc()}"}), 500
 
         @self.app.route('/get_action', methods=['POST'])
         @self._require_json
@@ -100,7 +103,8 @@ class PlayApiServer:
                     "model_id": player.model_id
                 })
             except Exception as e:
-                return jsonify({"error": str(e)}), 500
+                traceback.print_exc()
+                return jsonify({"error": f"{str(e)}\n{traceback.format_exc()}"}), 500
 
         @self.app.route('/reset', methods=['POST'])
         @self._require_json
