@@ -1,0 +1,5 @@
+numpy
+requests
+gymnasium
+tqdm
+Cython

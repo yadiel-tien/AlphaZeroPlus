@@ -71,35 +71,45 @@ CONFIG = {
 
 ## 🛠️ 安装与设定 (Setup & Installation)
 
-本项目采用**算力分离**架构，建议准备两个独立的 Python 环境：
+根据您的需求选择环境配置。
 
-### 1. 创建标准环境 (用于训练、推理、UI)
-用于运行 PyTorch 训练服务器、推理 Hub 以及图形界面。建议使用 Python 3.10+。
+### 1. 客户端环境 (仅玩游戏)
+如果您只需在本地运行图形界面，与已有的远程服务器对战，请配置此轻量级环境。建议使用 Python 3.11+。
 ```bash
-python3 -m venv standard_venv
-source standard_venv/bin/activate
-pip install torch numpy requests pygame flask
+python3 -m venv client_venv
+source client_venv/bin/activate
+pip install -r requirements-client.txt
 ```
 
-### 2. 创建 nogil 环境 (仅用于高性能自我对弈)
-用于运行大规模并行的 MCTS 搜索。推荐使用 [uv](https://github.com/astral-sh/uv) 安装 free-threading 版本。
+### 2. 完整开发与服务器环境 (训练、推理、对战)
+如果您需要运行推理服务器（Play Server / Train Server）或进行本地开发，请配置完整环境。
+```bash
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+### 3. 创建 nogil 环境 (可选：仅在需要高性能训练时)
+用于运行大规模并行的自我对弈（Self-play）。如果您不打算自己训练模型，可以跳过此步。
+推荐使用 [uv](https://github.com/astral-sh/uv) 安装 free-threading 版本：
 ```bash
 # 安装 3.14t 并创建环境
 uv python install 3.14t
 uv venv --python 3.14t nogil_venv
 source nogil_venv/bin/activate
-# 仅需安装基础库 (selfplay 通过 socket 与标准环境的服务器通信)
-uv pip install numpy requests
+# nogil 环境主要负责环境模拟和 MCTS 搜索，不需要 torch
+uv pip install -r requirements-nogil.txt
 ```
 
-### 3. 编译 Cython 模块
-必须使用 `nogil` 环境编译以确保线程安全：
+### 3. 编译 Cython 模块 (可选)
+核心逻辑（如招法生成）提供了 Cython 优化版。编译后可显著提升**训练**时的搜索速度。如果您只是**玩游戏**，可以跳过此步，系统会自动回退到纯 Python 实现。
 ```bash
-source nogil_venv/bin/activate
+# 如需编译，在激活的环境中运行：
 cd core/env
 python setup.py build_ext --inplace
 cd ../..
 ```
+
 
 ## 🎮 使用方法 (Usage)
 
@@ -109,12 +119,16 @@ cd ../..
     * **终端 1 (标准环境)**: `python -m scripts.train_server` (负责权重更新与推理)
     * **终端 2 (nogil 环境)**: `python -X gil=0 -m scripts.selfplay` (负责并行产生数据)
 
-### 2. 图形化对战 (推荐)
-1. **终端 1 (标准环境)**: `python -m scripts.play_server` (对战 API 服务，已集成推理调度功能)
-2. **终端 2 (标准环境)**: `python -m scripts.ui_play` (GUI 界面)
+### 2. 图形化对战 (支持跨设备)
+1. **终端 1 (标准环境)**: `python -m scripts.play_server` (对战 API 服务，已集成推理调度功能,计算中心)
+2. **终端 2 (客户端环境)**: `python -m scripts.ui_play` (GUI 界面)
 
+### 3. 本地命令行对战 (CLI)
+适用于同一台机器上的命令行交互模式：
+1. **终端 1 (标准环境)**: `python -m scripts.infer_hub` (启动推理调度中心)
+2. **终端 2 (标准环境)**: `python -m scripts.cli_play` (启动命令行对战)
 
-### 3. AI 竞技场
+### 4. AI 竞技场
 ```bash
 source nogil_venv/bin/activate
 python -m scripts.arena
